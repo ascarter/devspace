@@ -56,8 +56,8 @@ Rust provides:
 - [x] GitHub repository
 - [x] Rust project structure
 - [x] CLI scaffolding with clap
-- [ ] Verify ergonomics
-- [ ] GitHub Actions (CI)
+- [x] Verify ergonomics (`--help` output validated)
+- [x] GitHub Actions (CI/Build/Release workflows)
 - [ ] Basic integration tests
 
 ### Phase 2: Core Infrastructure (Next)
@@ -117,8 +117,9 @@ Priority order (one at a time, with tests + docs):
    - Self-update
 
 ### Phase 4: Release
-- [ ] Cross-compilation (multiple platforms/architectures)
-- [ ] GitHub Actions for releases
+- [x] Cross-compilation (x86_64/aarch64 for macOS/Linux)
+- [x] GitHub Actions for releases (dormant until tagged)
+- [ ] macOS code signing (requires Apple Developer account)
 - [ ] Installation script (curl | sh)
 - [ ] Profile repository template
 - [ ] User guide
@@ -409,9 +410,9 @@ None yet - project just started!
 
 ## Notes
 
-### 2025-10-02: Project Initialization
+### 2025-10-02: Project Initialization & CI Setup
 
-Created devspace repository and initial Rust scaffolding. Comprehensive context transferred from shell implementation via ASSISTANT.md. Ready to begin development.
+Created devspace repository and initial Rust scaffolding. Comprehensive context transferred from shell implementation via ASSISTANT.md.
 
 **Key decisions**:
 - Use clap for CLI (derive macros)
@@ -420,4 +421,16 @@ Created devspace repository and initial Rust scaffolding. Comprehensive context 
 - Follow shell implementation's manifest format exactly
 - Test-driven development (write tests as we go)
 
-**Next session**: Verify CLI structure, add GitHub Actions, begin core infrastructure.
+**CI/CD Setup**:
+- ✅ CI workflow: tests, fmt, clippy on macOS/Linux
+- ✅ Build workflow: multi-platform binaries (x86_64/aarch64)
+- ✅ Release workflow: automated releases on tags (dormant)
+- 📝 Binaries download but trigger macOS Gatekeeper (unsigned)
+
+**macOS Code Signing** (deferred):
+- Will need Apple Developer account for distribution
+- Temporary workaround: `xattr -d com.apple.quarantine /path/to/devspace`
+- Alternative: Homebrew tap (common for CLI tools)
+- To implement later when ready for public distribution
+
+**Next session**: Begin Phase 2 - Core infrastructure (TOML parsing, platform detection, XDG helpers).
