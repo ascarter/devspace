@@ -1,10 +1,13 @@
+use crate::cli::{AppAction, Cli, Commands, ConfigAction, ProfileAction};
 use anyhow::Result;
-use crate::cli::{Cli, Commands, ConfigAction, AppAction, ProfileAction};
 
 pub fn execute(cli: Cli) -> Result<()> {
     match cli.command {
         Commands::Init { shell } => {
-            println!("TODO: Initialize shell integration for {:?}", shell.unwrap_or_else(|| "default".to_string()));
+            println!(
+                "TODO: Initialize shell integration for {:?}",
+                shell.unwrap_or_else(|| "default".to_string())
+            );
             Ok(())
         }
         Commands::Env => {
@@ -69,7 +72,10 @@ pub fn execute(cli: Cli) -> Result<()> {
                 Ok(())
             }
             ProfileAction::Clone { repository, name } => {
-                println!("TODO: Clone profile from: {} (name: {:?})", repository, name);
+                println!(
+                    "TODO: Clone profile from: {} (name: {:?})",
+                    repository, name
+                );
                 Ok(())
             }
             ProfileAction::Activate { name } => {
