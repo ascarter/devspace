@@ -3,8 +3,8 @@ use clap::{Parser, Subcommand};
 /// Personal development environment manager
 ///
 /// devspace manages your dotfiles and development tools through declarative
-/// manifests. It combines configuration management with tool installation in
-/// a single, portable binary.
+/// manifests. Bootstrap new machines, sync configurations, and maintain your
+/// dev environment with a single portable binary.
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
@@ -12,109 +12,87 @@ pub struct Cli {
     #[arg(short, long, global = true)]
     pub verbose: bool,
 
-    /// Profile directory (defaults to $XDG_CONFIG_HOME/devspace)
-    #[arg(short, long, global = true)]
-    pub profile: Option<String>,
-
     #[command(subcommand)]
     pub command: Commands,
 }
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Initialize shell integration
+    /// Initialize shell integration and optionally clone a profile
     Init {
         /// Shell type (bash, zsh, fish)
         #[arg(value_name = "SHELL")]
         shell: Option<String>,
-    },
 
-    /// Export environment variables
-    Env,
+        /// Git repository URL or GitHub shorthand (user/repo) to clone
+        #[arg(value_name = "REPOSITORY")]
+        repository: Option<String>,
 
-    /// Manage configuration files
-    Config {
-        #[command(subcommand)]
-        action: ConfigAction,
-    },
-
-    /// Manage applications
-    App {
-        #[command(subcommand)]
-        action: AppAction,
-    },
-
-    /// Manage profiles
-    Profile {
-        #[command(subcommand)]
-        action: ProfileAction,
-    },
-
-    /// Check and repair environment
-    Doctor,
-
-    /// Show status of entire environment
-    Status,
-}
-
-#[derive(Subcommand, Debug)]
-pub enum ConfigAction {
-    /// Show configuration status
-    Status,
-    /// Link configuration files
-    Link,
-    /// Unlink configuration files
-    Unlink,
-}
-
-#[derive(Subcommand, Debug)]
-pub enum AppAction {
-    /// List all applications in manifests
-    List,
-    /// Show application status
-    Status {
-        /// Application name (shows all if not specified)
-        name: Option<String>,
-    },
-    /// Install application(s)
-    Install {
-        /// Application name (installs all if not specified)
-        name: Option<String>,
-    },
-    /// Update application(s)
-    Update {
-        /// Application name (updates all if not specified)
-        name: Option<String>,
-    },
-    /// Uninstall application
-    Uninstall {
-        /// Application name
-        name: String,
-    },
-}
-
-#[derive(Subcommand, Debug)]
-pub enum ProfileAction {
-    /// List available profiles
-    List,
-    /// Show current profile
-    Current,
-    /// Clone a profile from a Git repository
-    Clone {
-        /// Git repository URL or GitHub shorthand (user/repo)
-        repository: String,
-        /// Profile name (defaults to repository name)
+        /// Profile name (defaults to 'default')
         #[arg(short, long)]
         name: Option<String>,
     },
-    /// Activate a profile
-    Activate {
-        /// Profile name
+
+    /// Clone a profile from a Git repository
+    Clone {
+        /// Git repository URL or GitHub shorthand (user/repo)
+        #[arg(value_name = "REPOSITORY")]
+        repository: String,
+
+        /// Profile name (defaults to 'default')
+        #[arg(short, long)]
+        name: Option<String>,
+    },
+
+    /// Switch to a different profile
+    Use {
+        /// Profile name to activate
+        #[arg(value_name = "PROFILE")]
         name: String,
     },
-    /// Create a new profile
-    Create {
-        /// Profile name
-        name: String,
+
+    /// List available profiles
+    List,
+
+    /// Sync profile and install/update tools
+    Sync,
+
+    /// Update tools (respects version pins)
+    Update {
+        /// Tool name (updates all if not specified)
+        #[arg(value_name = "TOOL")]
+        name: Option<String>,
     },
+
+    /// Show environment status
+    Status,
+
+    /// Check environment health and repair issues
+    Doctor,
+
+    /// Output environment setup (used in shell init)
+    Env {
+        /// Profile name (defaults to active profile)
+        #[arg(value_name = "PROFILE")]
+        profile: Option<String>,
+    },
+
+    /// Manage devspace itself
+    #[command(subcommand)]
+    Self_(SelfAction),
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SelfAction {
+    /// Show devspace information (version, disk usage, profiles)
+    #[command(name = "info")]
+    Info,
+
+    /// Update devspace to latest version
+    #[command(name = "update")]
+    Update,
+
+    /// Uninstall devspace and remove all data
+    #[command(name = "uninstall")]
+    Uninstall,
 }

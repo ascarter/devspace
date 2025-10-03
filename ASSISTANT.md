@@ -4,7 +4,7 @@ This document provides context for AI coding assistants (like Claude Code) worki
 
 ## Project Overview
 
-**devspace** is a personal development environment manager that combines dotfile management with tool installation through declarative manifests. It's implemented in Rust as a single binary that can be deployed anywhere.
+**devspace** is a lightweight, portable development environment bootstrapper. It manages dotfiles and development tools through declarative manifests, optimized for interactive development on laptops and workstations.
 
 **Repository**: https://github.com/ascarter/devspace
 **License**: MIT
@@ -12,25 +12,29 @@ This document provides context for AI coding assistants (like Claude Code) worki
 
 ## Project Vision
 
-### The devspace Concept
+### Core Goals
 
-A **devspace** is a "profile" of dotfiles + development tools that can be deployed in different environments:
+1. **Bootstrap new machines quickly**: Single binary → full dev environment
+2. **Lightweight & portable**: No heavy package managers, works on any POSIX system
+3. **XDG compliant**: Self-contained in standard directories, easy to remove
+4. **Native tool experience**: Use rustup/uv/fnm directly, no runtime overhead
+5. **Version controlled**: Dotfiles + manifests in GitHub
+6. **Zero impact**: Symlinks in standard locations, no PATH hacks
 
-- **Single binary deployment**: Download and run, no dependencies
-- **Profile-based**: Different configs for work/personal/projects
-- **Platform-aware**: macOS, Linux, BSD (POSIX-focused)
-- **Works everywhere**: Host systems, toolbox, devcontainer, codespaces
-- **User-maintained**: Profile stored in user's GitHub repository
-- **Declarative**: Everything defined in TOML manifests
+### What devspace Does
 
-### Key Goals
+- **Manages dotfiles**: Symlinks zsh/git/editor configs from versioned profile
+- **Installs dev tools**: CLI tools, language toolchains (rustup/uv/fnm), native apps
+- **Profile switching**: Multiple environments (personal/work/project-specific)
+- **Keeps tools updated**: Respects version pins, shows available updates
+- **Self-contained**: All state in XDG dirs, single command to uninstall
 
-1. **Simplicity**: One binary, minimal configuration
-2. **Portability**: Works on any POSIX system
-3. **Reproducibility**: Same manifest → same environment
-4. **Flexibility**: Multiple profiles for different contexts
-5. **Speed**: Rust performance for fast operations
-6. **Hackability**: Clear code, comprehensive tests
+### What devspace Does NOT Do
+
+- ❌ Runtime environment switching (not direnv/mise)
+- ❌ Version management (use rustup/uv/fnm for that)
+- ❌ Shims/wrappers (native binaries, direct PATH)
+- ❌ CI/production builds (for interactive dev only)
 
 ## Prior Art & Reference Implementation
 
@@ -320,6 +324,42 @@ remote = "flathub"
 
 4. **Environment variable expansion**:
    - `${XDG_DATA_HOME}`, `${XDG_BIN_HOME}`, etc.
+
+## CLI Commands (v2 Design)
+
+**See `.claude/design-v2.md` for complete architecture**
+
+### Bootstrap
+```bash
+devspace init [shell] [url|user/repo] [--name <profile>]
+devspace clone <url|user/repo> [--name <profile>]
+```
+
+### Profile Management
+```bash
+devspace use <profile>         # Switch profile
+devspace list                  # List profiles
+```
+
+### Daily Operations
+```bash
+devspace sync                  # Pull + install + respect pins
+devspace update [tool]         # Update tools (respect pins)
+devspace status                # Show status
+```
+
+### Maintenance
+```bash
+devspace doctor                # Health check + repair
+devspace self                  # Show info
+devspace self update           # Update devspace
+devspace self uninstall        # Remove all
+```
+
+### Environment (Shell Integration)
+```bash
+devspace env [profile]         # Output env setup
+```
 
 ## Common Tasks
 

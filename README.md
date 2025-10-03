@@ -1,27 +1,23 @@
 # devspace
 
-> Personal development environment manager - declarative dotfiles + tools as code
+> Lightweight, portable development environment bootstrapper
 
-**devspace** manages your development environment through declarative manifests. It combines dotfile management with tool installation in a single, portable binary.
+**devspace** manages your dotfiles and development tools through declarative manifests. Bootstrap new machines, sync configurations, and maintain your dev environment with a single portable binary.
 
 ## Status
 
-🚧 **Early Development** - This project is in active development. The shell-based prototype can be found at [ascarter/dev](https://github.com/ascarter/dev).
+🚧 **Early Development** - CLI structure complete, implementation in progress.
 
-## Concept
+## What is devspace?
 
-A **devspace** is a profile containing:
-- Shell configuration (zsh, bash, etc.)
-- Development tools and their configurations
-- Application manifests (what to install)
-- Environment-specific settings
+A personal dev environment bootstrapper optimized for interactive development:
 
-Key features:
-- Single Rust binary - just download and run
-- Profile-based - maintain different configs for work/personal/projects
-- Platform-aware - macOS, Linux, BSD support
-- XDG-compliant - respects standard directories
-- Works everywhere - host, toolbox, devcontainer, codespaces
+- **Quick bootstrap**: Single binary → full dev environment
+- **Version controlled**: Dotfiles + tool manifests in GitHub
+- **XDG compliant**: Self-contained, easy to remove
+- **Native tools**: Use rustup/uv/fnm directly, no shims
+- **Profile-based**: Switch between work/personal/project configs
+- **Lightweight**: No heavy package managers or runtime overhead
 
 ## Quick Start
 
@@ -30,50 +26,124 @@ Key features:
 curl -fsSL https://devspace.dev/install.sh | sh
 ```
 
-**Initialize a profile**:
+**Bootstrap new machine**:
 ```bash
-# Clone an existing profile from GitHub
-devspace profile clone username/dotfiles
+# Clone your profile and setup shell integration
+devspace init zsh username/dotfiles
 
-# Or create a new one
-devspace profile create my-profile
+# Reload shell
+exec $SHELL
+
+# Done! Your environment is ready
 ```
 
-**Install tools**:
+**Or start from scratch**:
 ```bash
-# Install all apps from manifest
-devspace app install
+# Create template profile and setup shell
+devspace init zsh --name myconfig
 
-# Install specific app
-devspace app install ripgrep
+# Edit your profile
+cd ~/.config/devspace/profiles/myconfig
+
+# Publish to GitHub
+gh repo create myconfig --public --source=. --push
 ```
 
-**Manage configs**:
-```bash
-# Link configuration files
-devspace config link
+## Daily Usage
 
-# Show status
+```bash
+# Pull latest profile changes and install new tools
+devspace sync
+
+# Check for tool updates (respects version pins)
+devspace update
+
+# Show current status
 devspace status
+
+# Check environment health
+devspace doctor
 ```
 
-## Profile Repository
+## Profile Management
 
-Your profile repository should contain:
+```bash
+# Clone a new profile
+devspace clone username/work-dotfiles --name work
+
+# Switch profiles
+devspace use work
+exec $SHELL
+
+# List all profiles
+devspace list
 ```
-my-profile/
-├── config/           # Dotfiles to symlink
+
+## Profile Structure
+
+```
+~/.config/devspace/profiles/default/
+├── config/                    # Dotfiles (symlinked to ~)
 │   ├── zsh/
+│   │   └── .zshrc
 │   ├── git/
+│   │   └── .gitconfig
 │   └── ...
-├── manifests/        # Application manifests
-│   ├── cli.toml
-│   ├── macos.toml
-│   └── linux.toml
-└── devspace.toml     # Profile configuration
+├── manifests/                 # Tool definitions
+│   ├── cli.toml              # Cross-platform tools
+│   └── macos.toml            # macOS-specific
+└── README.md                  # Auto-generated
 ```
 
-See [profile-template](https://github.com/ascarter/devspace-profile) for an example.
+### Example Manifest
+
+```toml
+# manifests/cli.toml
+[ripgrep]
+installer = "ubi"
+project = "BurntSushi/ripgrep"
+version = "14.0.0"            # Pin version (optional)
+
+[rustup]
+installer = "curl"
+url = "https://sh.rustup.rs"
+self_update = true            # Has built-in updates
+
+[uv]
+installer = "curl"
+url = "https://astral.sh/uv/install.sh"
+```
+
+## How It Works
+
+1. **Shell integration**: `devspace init` adds one line to `.zshenv`:
+   ```bash
+   eval "$(devspace env)"
+   ```
+
+2. **Environment setup**: `devspace env` outputs:
+   ```bash
+   export PATH="$HOME/.local/state/devspace/environments/default/bin:$PATH"
+   export MANPATH="$HOME/.local/state/devspace/environments/default/share/man:$MANPATH"
+   fpath=($HOME/.local/state/devspace/environments/default/share/zsh/site-functions $fpath)
+   ```
+
+3. **Tool installation**: Tools cached in `~/.cache/devspace/`, symlinked per-profile
+
+4. **Profile switching**: Atomically updates symlinks and config
+
+## Self-Management
+
+```bash
+# Show version, disk usage, profile count
+devspace self
+
+# Update devspace itself
+devspace self update
+
+# Remove everything (with confirmation)
+devspace self uninstall
+```
 
 ## Development
 
@@ -99,6 +169,8 @@ cargo run -- --help
 ## Architecture
 
 See [ASSISTANT.md](ASSISTANT.md) for detailed architecture and design decisions.
+
+See [.claude/design-v2.md](.claude/design-v2.md) for current implementation design.
 
 ## License
 
