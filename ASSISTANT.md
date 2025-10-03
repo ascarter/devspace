@@ -231,15 +231,15 @@ mod macos_tests {
 
 ## Implementation Roadmap
 
-### Phase 1: Foundation (Current)
+### Phase 1: Foundation ✅
 - [x] GitHub repository created
 - [x] Rust project initialized
 - [x] CLI scaffolding with clap
-- [ ] Basic command structure (no-ops)
-- [ ] Verify `--help` output
-- [ ] CI/CD setup (GitHub Actions)
+- [x] Basic command structure (no-ops)
+- [x] Verify `--help` output
+- [x] CI/CD setup (GitHub Actions)
 
-### Phase 2: Core Infrastructure
+### Phase 2: Core Infrastructure (Next)
 - [ ] TOML manifest parsing
 - [ ] Manifest type definitions
 - [ ] Platform detection (macOS, Linux, BSD)
@@ -262,8 +262,9 @@ Priority order:
 10. Advanced features (parallel installs, doctor, version checking)
 
 ### Phase 4: Release
-- [ ] Cross-compilation (macOS, Linux x86_64/ARM64)
-- [ ] GitHub Actions for releases
+- [x] Cross-compilation (macOS, Linux x86_64/ARM64)
+- [x] GitHub Actions for releases (dormant until tagged)
+- [ ] macOS code signing (requires Apple Developer account)
 - [ ] Installation script
 - [ ] Profile repository template
 - [ ] User documentation
@@ -390,7 +391,7 @@ cargo test --test integration
 
 When working on this project:
 1. Reference the shell implementation for behavior
-2. Check NOTES.md for current status and decisions
+2. Check `.claude/session-notes.md` for recent session details (git-ignored)
 3. Look at existing tests for patterns
 4. Run `cargo doc --open` for API docs
 5. Check GitHub issues for known problems
