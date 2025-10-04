@@ -168,9 +168,9 @@ cargo run -- --help
 
 ## Architecture
 
-See [ASSISTANT.md](ASSISTANT.md) for detailed architecture and design decisions.
+See [ASSISTANT.md](ASSISTANT.md) for AI assistant context and development guidelines.
 
-See [.claude/design-v2.md](.claude/design-v2.md) for current implementation design.
+See [docs/architecture.md](docs/architecture.md) for the current implementation design and technical decisions.
 
 ## License
 

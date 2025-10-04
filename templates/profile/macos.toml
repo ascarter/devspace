@@ -1,0 +1,10 @@
+# macOS-specific applications
+#
+# These will only be installed on macOS systems
+
+# [ghostty]
+# installer = "dmg"
+# url = "https://ghostty.org/download"
+# app = "Ghostty.app"
+# team_id = "24VZTF6M5V"
+# self_update = true

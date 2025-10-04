@@ -1,0 +1,31 @@
+# Cross-platform CLI tools
+#
+# Uncomment and customize the tools you want to install
+
+# [ripgrep]
+# installer = "ubi"
+# project = "BurntSushi/ripgrep"
+# version = "14.0.0"  # Pin version (optional, omit for latest)
+
+# [fd]
+# installer = "ubi"
+# project = "sharkdp/fd"
+
+# [bat]
+# installer = "ubi"
+# project = "sharkdp/bat"
+
+# [rustup]
+# installer = "curl"
+# url = "https://sh.rustup.rs"
+# shell = "sh"
+# self_update = true
+
+# [uv]
+# installer = "curl"
+# url = "https://astral.sh/uv/install.sh"
+# shell = "sh"
+
+# [fnm]
+# installer = "ubi"
+# project = "Schniz/fnm"

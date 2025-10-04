@@ -327,7 +327,7 @@ remote = "flathub"
 
 ## CLI Commands (v2 Design)
 
-**See `.claude/design-v2.md` for complete architecture**
+**See `docs/architecture.md` for complete architecture**
 
 ### Bootstrap
 ```bash
