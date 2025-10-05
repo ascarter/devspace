@@ -84,6 +84,41 @@ The shell-based prototype demonstrates all core functionality:
 
 ## Architecture
 
+### Design Principles
+
+**Rust Data-Oriented Design**:
+- Use proper Rust types to represent domain concepts
+- Implement behavior through `impl` blocks on types
+- Clear ownership and composition relationships
+- NOT procedural/shell-script style with loose functions
+- Fully unit testable at every level
+- Type-safe relationships between entities
+
+**Type Hierarchy**:
+```
+Workspace                    // Root context (~/.config/devws/)
+  └─ Profile                 // Active or named profile
+       ├─ Config             // Config file management (symlinked dotfiles)
+       ├─ Environment        // Shell environment for this profile
+       └─ Manifest (future)  // Tool installation manifests
+```
+
+**Usage Pattern**:
+```rust
+// CLI creates workspace, gets profile, accesses typed components
+let workspace = Workspace::new()?;
+let profile = workspace.get_profile("default")?;
+let env = profile.environment(Shell::Zsh)?;
+println!("{}", env.format());
+```
+
+**Key Rules**:
+1. Types own their data and behavior
+2. Composition over loose coupling
+3. Methods return typed results, not raw primitives
+4. Each module has comprehensive unit tests
+5. Public API surfaces types, not implementation details
+
 ### Module Structure
 
 ```
@@ -92,43 +127,99 @@ devws/
 │   ├── main.rs              # Entry point
 │   ├── cli.rs               # Clap CLI definitions
 │   ├── lib.rs               # Public library interface
-│   ├── commands/            # Command implementations
+│   ├── commands/            # Command implementations (thin layer)
+│   │   └── mod.rs           # Dispatch to workspace/profile methods
+│   │
+│   ├── config/              # Core domain types
+│   │   ├── mod.rs           # Re-exports public types
+│   │   ├── workspace.rs     # Workspace type (root context)
+│   │   ├── profile.rs       # Profile type and management
+│   │   ├── config.rs        # Config type (dotfiles/symlinks)
+│   │   └── environment.rs   # Environment type (shell env generation)
+│   │
+│   ├── manifest/            # Tool manifest types (future)
 │   │   ├── mod.rs
-│   │   ├── init.rs
-│   │   ├── config.rs
-│   │   ├── app.rs
-│   │   ├── profile.rs
-│   │   └── doctor.rs
-│   ├── config/              # Config & manifest types
+│   │   └── parser.rs        # TOML manifest parsing
+│   │
+│   ├── backends/            # Tool installer backends (future)
 │   │   ├── mod.rs
-│   │   ├── manifest.rs      # App manifest types
-│   │   ├── profile.rs       # Profile configuration
-│   │   └── parser.rs        # TOML parsing
-│   ├── backends/            # Installer backends
-│   │   ├── mod.rs
-│   │   ├── ubi.rs           # UBI backend (use as library)
+│   │   ├── ubi.rs           # UBI backend
 │   │   ├── dmg.rs           # DMG installer (macOS)
 │   │   ├── flatpak.rs       # Flatpak (Linux)
 │   │   └── curl.rs          # Curl-based installers
-│   ├── platform/            # Platform detection
-│   │   ├── mod.rs
-│   │   └── detect.rs
-│   ├── symlinks/            # Symlink management
-│   │   ├── mod.rs
-│   │   └── manager.rs
-│   └── util/                # Utilities
-│       ├── mod.rs
-│       ├── xdg.rs           # XDG directory helpers
-│       └── git.rs           # Git operations
+│   │
+│   └── platform/            # Platform detection (future)
+│       └── mod.rs
+│
 ├── tests/
 │   └── integration/         # Integration tests
-└── examples/                # Usage examples
+└── templates/               # Embedded profile templates
 ```
 
-### Core Types (Planned)
+### Core Types
 
 ```rust
-// Manifest types
+// Workspace - root entry point
+pub struct Workspace {
+    config_dir: PathBuf,  // ~/.config/devws
+    state_dir: PathBuf,   // ~/.local/state/devws
+}
+
+impl Workspace {
+    pub fn new() -> Result<Self>;
+    pub fn get_profile(&self, name: &str) -> Result<Profile>;
+    pub fn active_profile(&self) -> Result<Profile>;
+    pub fn list_profiles(&self) -> Result<Vec<Profile>>;
+    pub fn create_profile(&self, name: &str) -> Result<Profile>;
+}
+
+// Profile - represents a dev environment profile
+pub struct Profile {
+    name: String,
+    path: PathBuf,
+    workspace: Workspace,  // Reference to parent
+}
+
+impl Profile {
+    pub fn config(&self) -> Result<Config>;
+    pub fn environment(&self, shell: Shell) -> Result<Environment>;
+    pub fn activate(&self) -> Result<()>;
+    // Future: pub fn manifest(&self) -> Result<Manifest>;
+}
+
+// Config - manages dotfiles/config file symlinking
+pub struct Config {
+    config_dir: PathBuf,
+    entries: Vec<ConfigEntry>,
+    ignore_patterns: Vec<String>,
+}
+
+impl Config {
+    pub fn new(profile_path: &Path) -> Result<Self>;
+    pub fn discover_entries(&self, target_dir: &Path) -> Result<Vec<ConfigEntry>>;
+    pub fn install(&self, target_dir: &Path) -> Result<()>;
+    pub fn uninstall(&self, target_dir: &Path) -> Result<()>;
+}
+
+// ConfigEntry - a single config file to symlink
+pub struct ConfigEntry {
+    pub source: PathBuf,
+    pub target: PathBuf,
+}
+
+// Environment - shell environment for a profile
+pub struct Environment {
+    bin_path: PathBuf,
+    man_path: PathBuf,
+    completions_path: PathBuf,
+}
+
+impl Environment {
+    pub fn new(profile: &Profile) -> Result<Self>;
+    pub fn format(&self, shell: Shell) -> String;
+}
+
+// Manifest types (future)
 struct AppManifest {
     apps: HashMap<String, AppConfig>,
 }
