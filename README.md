@@ -1,14 +1,14 @@
-# devspace
+# devws
 
 > Lightweight, portable development environment bootstrapper
 
-**devspace** manages your dotfiles and development tools through declarative manifests. Bootstrap new machines, sync configurations, and maintain your dev environment with a single portable binary.
+**devws (Developer Workspace)** manages your dotfiles and development tools through declarative manifests. Bootstrap new machines, sync configurations, and maintain your dev environment with a single portable binary.
 
 ## Status
 
 🚧 **Early Development** - CLI structure complete, implementation in progress.
 
-## What is devspace?
+## What is devws?
 
 A personal dev environment bootstrapper optimized for interactive development:
 
@@ -23,13 +23,13 @@ A personal dev environment bootstrapper optimized for interactive development:
 
 **Installation** (coming soon):
 ```bash
-curl -fsSL https://devspace.dev/install.sh | sh
+curl -fsSL https://devws.dev/install.sh | sh
 ```
 
 **Bootstrap new machine**:
 ```bash
 # Clone your profile and setup shell integration
-devspace init zsh username/dotfiles
+devws init zsh username/dotfiles
 
 # Reload shell
 exec $SHELL
@@ -40,10 +40,10 @@ exec $SHELL
 **Or start from scratch**:
 ```bash
 # Create template profile and setup shell
-devspace init zsh --name myconfig
+devws init zsh --name myconfig
 
 # Edit your profile
-cd ~/.config/devspace/profiles/myconfig
+cd ~/.config/devws/profiles/myconfig
 
 # Publish to GitHub
 gh repo create myconfig --public --source=. --push
@@ -53,36 +53,36 @@ gh repo create myconfig --public --source=. --push
 
 ```bash
 # Pull latest profile changes and install new tools
-devspace sync
+devws sync
 
 # Check for tool updates (respects version pins)
-devspace update
+devws update
 
 # Show current status
-devspace status
+devws status
 
 # Check environment health
-devspace doctor
+devws doctor
 ```
 
 ## Profile Management
 
 ```bash
 # Clone a new profile
-devspace clone username/work-dotfiles --name work
+devws clone username/work-dotfiles --name work
 
 # Switch profiles
-devspace use work
+devws use work
 exec $SHELL
 
 # List all profiles
-devspace list
+devws list
 ```
 
 ## Profile Structure
 
 ```
-~/.config/devspace/profiles/default/
+~/.config/devws/profiles/default/
 ├── config/                    # Dotfiles (symlinked to ~)
 │   ├── zsh/
 │   │   └── .zshrc
@@ -116,19 +116,19 @@ url = "https://astral.sh/uv/install.sh"
 
 ## How It Works
 
-1. **Shell integration**: `devspace init` adds one line to `.zshenv`:
+1. **Shell integration**: `devws init` adds one line to `.zshenv`:
    ```bash
-   eval "$(devspace env)"
+   eval "$(devws env)"
    ```
 
-2. **Environment setup**: `devspace env` outputs:
+2. **Environment setup**: `devws env` outputs:
    ```bash
-   export PATH="$HOME/.local/state/devspace/environments/default/bin:$PATH"
-   export MANPATH="$HOME/.local/state/devspace/environments/default/share/man:$MANPATH"
-   fpath=($HOME/.local/state/devspace/environments/default/share/zsh/site-functions $fpath)
+   export PATH="$HOME/.local/state/devws/environments/default/bin:$PATH"
+   export MANPATH="$HOME/.local/state/devws/environments/default/share/man:$MANPATH"
+   fpath=($HOME/.local/state/devws/environments/default/share/zsh/site-functions $fpath)
    ```
 
-3. **Tool installation**: Tools cached in `~/.cache/devspace/`, symlinked per-profile
+3. **Tool installation**: Tools cached in `~/.cache/devws/`, symlinked per-profile
 
 4. **Profile switching**: Atomically updates symlinks and config
 
@@ -136,13 +136,13 @@ url = "https://astral.sh/uv/install.sh"
 
 ```bash
 # Show version, disk usage, profile count
-devspace self
+devws self
 
-# Update devspace itself
-devspace self update
+# Update devws itself
+devws self update
 
 # Remove everything (with confirmation)
-devspace self uninstall
+devws self uninstall
 ```
 
 ## Development

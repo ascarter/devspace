@@ -1,12 +1,12 @@
-# AI Assistant Context for devspace
+# AI Assistant Context for Developer Workspace (devws)
 
-This document provides context for AI coding assistants (like Claude Code) working on the devspace project.
+This document provides context for AI coding assistants (like Claude Code) working on the devws project.
 
 ## Project Overview
 
-**devspace** is a lightweight, portable development environment bootstrapper. It manages dotfiles and development tools through declarative manifests, optimized for interactive development on laptops and workstations.
+**devws** is a lightweight, portable development environment bootstrapper. It manages dotfiles and development tools through declarative manifests, optimized for interactive development on laptops and workstations.
 
-**Repository**: https://github.com/ascarter/devspace
+**Repository**: https://github.com/ascarter/devws
 **License**: MIT
 **Language**: Rust (2021 edition)
 
@@ -21,7 +21,7 @@ This document provides context for AI coding assistants (like Claude Code) worki
 5. **Version controlled**: Dotfiles + manifests in GitHub
 6. **Zero impact**: Symlinks in standard locations, no PATH hacks
 
-### What devspace Does
+### What devws Does
 
 - **Manages dotfiles**: Symlinks zsh/git/editor configs from versioned profile
 - **Installs dev tools**: CLI tools, language toolchains (rustup/uv/fnm), native apps
@@ -29,7 +29,7 @@ This document provides context for AI coding assistants (like Claude Code) worki
 - **Keeps tools updated**: Respects version pins, shows available updates
 - **Self-contained**: All state in XDG dirs, single command to uninstall
 
-### What devspace Does NOT Do
+### What devws Does NOT Do
 
 - ❌ Runtime environment switching (not direnv/mise)
 - ❌ Version management (use rustup/uv/fnm for that)
@@ -87,7 +87,7 @@ The shell-based prototype demonstrates all core functionality:
 ### Module Structure
 
 ```
-devspace/
+devws/
 ├── src/
 │   ├── main.rs              # Entry point
 │   ├── cli.rs               # Clap CLI definitions
@@ -331,34 +331,34 @@ remote = "flathub"
 
 ### Bootstrap
 ```bash
-devspace init [shell] [url|user/repo] [--name <profile>]
-devspace clone <url|user/repo> [--name <profile>]
+devws init [shell] [url|user/repo] [--name <profile>]
+devws clone <url|user/repo> [--name <profile>]
 ```
 
 ### Profile Management
 ```bash
-devspace use <profile>         # Switch profile
-devspace list                  # List profiles
+devws use <profile>         # Switch profile
+devws list                  # List profiles
 ```
 
 ### Daily Operations
 ```bash
-devspace sync                  # Pull + install + respect pins
-devspace update [tool]         # Update tools (respect pins)
-devspace status                # Show status
+devws sync                  # Pull + install + respect pins
+devws update [tool]         # Update tools (respect pins)
+devws status                # Show status
 ```
 
 ### Maintenance
 ```bash
-devspace doctor                # Health check + repair
-devspace self                  # Show info
-devspace self update           # Update devspace
-devspace self uninstall        # Remove all
+devws doctor                # Health check + repair
+devws self                  # Show info
+devws self update           # Update devws
+devws self uninstall        # Remove all
 ```
 
 ### Environment (Shell Integration)
 ```bash
-devspace env [profile]         # Output env setup
+devws env [profile]         # Output env setup
 ```
 
 ## Common Tasks

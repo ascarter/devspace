@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
-use devspace::cli::Cli;
-use devspace::commands;
+use devws::cli::Cli;
+use devws::commands;
 
 fn main() -> Result<()> {
     // Initialize tracing

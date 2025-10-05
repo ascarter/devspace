@@ -1,12 +1,12 @@
 [package]
-name = "devspace"
+name = "devws"
 version = "0.1.0"
 edition = "2021"
 authors = ["Andrew Carter (@ascarter)"]
-description = "Personal development environment manager"
-repository = "https://github.com/ascarter/devspace"
+description = "Developer Workspace - Personal development environment manager"
+repository = "https://github.com/ascarter/devws"
 license = "MIT"
-keywords = ["dotfiles", "environment", "tools", "devops"]
+keywords = ["dotfiles", "environment", "tools", "devops", "workspace"]
 categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
@@ -26,7 +26,7 @@ predicates = "3.1"
 tempfile = "3.12"
 
 [[bin]]
-name = "devspace"
+name = "devws"
 path = "src/main.rs"
 
 [profile.release]

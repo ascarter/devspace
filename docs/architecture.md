@@ -1,11 +1,11 @@
-# devspace Design v2 (2025-10-02)
+# Developer Workspace (devws) Design v2 (2025-10-02)
 
 ## Architecture
 
 ### Directory Structure
 
 ```
-~/.config/devspace/
+~/.config/devws/
   config.toml                    # { active_profile = "default" }
   profiles/
     default/
@@ -15,7 +15,7 @@
         macos.toml               # macOS-specific
       README.md
 
-~/.local/state/devspace/         # XDG_STATE_HOME
+~/.local/state/devws/         # XDG_STATE_HOME
   environments/
     default/
       bin/                       # Symlinks → cache (or wrappers if needed)
@@ -23,7 +23,7 @@
         man/
         zsh/site-functions/
 
-~/.cache/devspace/               # XDG_CACHE_HOME
+~/.cache/devws/               # XDG_CACHE_HOME
   apps/
     <tool>/<version>/            # Actual binaries (shared across profiles)
 ```
@@ -40,48 +40,48 @@
 
 ```bash
 # Bootstrap
-devspace init [shell] [url|user/repo] [--name <profile>]
-devspace clone <url|user/repo> [--name <profile>]
+devws init [shell] [url|user/repo] [--name <profile>]
+devws clone <url|user/repo> [--name <profile>]
 
 # Profile management
-devspace use <profile>         # Switch profile (requires exec $SHELL)
-devspace list                  # List profiles
+devws use <profile>         # Switch profile (requires exec $SHELL)
+devws list                  # List profiles
 
 # Daily operations
-devspace sync                  # Pull changes, install new, respect pins
-devspace update [tool]         # Update tools (respect pins, show newer)
-devspace status                # Show profile, tools, updates
+devws sync                  # Pull changes, install new, respect pins
+devws update [tool]         # Update tools (respect pins, show newer)
+devws status                # Show profile, tools, updates
 
 # Maintenance
-devspace doctor                # Health check + repair
+devws doctor                # Health check + repair
 
 # Self-management
-devspace self                  # Show version, disk usage, profile count
-devspace self update           # Update devspace binary
-devspace self uninstall        # Remove everything (with confirmation)
+devws self                  # Show version, disk usage, profile count
+devws self update           # Update devws binary
+devws self uninstall        # Remove everything (with confirmation)
 
 # Environment (called by shell)
-devspace env [profile]         # Output env setup for shell init
+devws env [profile]         # Output env setup for shell init
 ```
 
 ## Shell Integration
 
 ```bash
-# Added by `devspace init zsh` to ~/.zshenv
-eval "$(devspace env)"
+# Added by `devws init zsh` to ~/.zshenv
+eval "$(devws env)"
 ```
 
-`devspace env` reads `~/.config/devspace/config.toml` (or `$DEVSPACE_PROFILE`) and outputs:
+`devws env` reads `~/.config/devws/config.toml` (or `$DEVSPACE_PROFILE`) and outputs:
 ```bash
-export PATH="$HOME/.local/state/devspace/environments/default/bin:$PATH"
-export MANPATH="$HOME/.local/state/devspace/environments/default/share/man:$MANPATH"
-fpath=($HOME/.local/state/devspace/environments/default/share/zsh/site-functions $fpath)
+export PATH="$HOME/.local/state/devws/environments/default/bin:$PATH"
+export MANPATH="$HOME/.local/state/devws/environments/default/share/man:$MANPATH"
+fpath=($HOME/.local/state/devws/environments/default/share/zsh/site-functions $fpath)
 ```
 
 ## Manifest Format
 
 ```toml
-# ~/.config/devspace/profiles/default/manifests/cli.toml
+# ~/.config/devws/profiles/default/manifests/cli.toml
 
 [ripgrep]
 installer = "ubi"
@@ -104,22 +104,22 @@ self_update = true              # Has built-in update mechanism
 
 ### Fresh machine setup
 ```bash
-curl -fsSL https://devspace.dev/install.sh | sh
-devspace init zsh ascarter/dotfiles
+curl -fsSL https://devws.dev/install.sh | sh
+devws init zsh ascarter/dotfiles
 exec $SHELL
 ```
 
 ### Switch profiles
 ```bash
-devspace clone ascarter/work --name work
-devspace use work
+devws clone ascarter/work --name work
+devws use work
 exec $SHELL
 ```
 
 ### Daily sync
 ```bash
-devspace sync      # Pull profile updates, install new tools
-devspace update    # Check for tool updates, respect pins
+devws sync      # Pull profile updates, install new tools
+devws update    # Check for tool updates, respect pins
 ```
 
 ## Implementation Status

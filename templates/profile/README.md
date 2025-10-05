@@ -1,6 +1,6 @@
-# devspace profile: {PROFILE_NAME}
+# devws profile: {PROFILE_NAME}
 
-This profile was created by devspace.
+This profile was created by devws (Developer Workspace).
 
 ## Structure
 
@@ -17,14 +17,14 @@ To share this profile across machines:
 cd {PROFILE_PATH}
 git init
 git add .
-git commit -m "Initial devspace profile"
+git commit -m "Initial devws profile"
 gh repo create {PROFILE_NAME} --public --source=. --push
 ```
 
 Then on another machine:
 
 ```bash
-devspace clone yourusername/{PROFILE_NAME}
+devws clone yourusername/{PROFILE_NAME}
 ```
 
 ## Customizing
@@ -32,4 +32,4 @@ devspace clone yourusername/{PROFILE_NAME}
 1. Add your dotfiles to `config/`
 2. Edit manifests to include your preferred tools
 3. Commit and push changes
-4. Run `devspace sync` on other machines to pull updates
+4. Run `devws sync` on other machines to pull updates

@@ -12,7 +12,7 @@ const MACOS_TEMPLATE: &str = include_str!("../../templates/profile/macos.toml");
 const README_TEMPLATE: &str = include_str!("../../templates/profile/README.md");
 const DEVSPACEIGNORE_TEMPLATE: &str = include_str!("../../templates/profile/.devspaceignore");
 
-/// Devspace configuration stored in ~/.config/devspace/config.toml
+/// devws configuration stored in ~/.config/devws/config.toml
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DevspaceConfig {
     pub active_profile: String,
@@ -26,7 +26,7 @@ impl Default for DevspaceConfig {
     }
 }
 
-/// Represents a devspace profile
+/// Represents a devws profile
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Profile {
     pub name: String,
@@ -35,9 +35,9 @@ pub struct Profile {
 
 // Private XDG helpers - only used within config module
 
-/// Get the XDG config directory for devspace
+/// Get the XDG config directory for devws
 ///
-/// Returns `$XDG_CONFIG_HOME/devspace` or `~/.config/devspace` if not set
+/// Returns `$XDG_CONFIG_HOME/devws` or `~/.config/devws` if not set
 fn devspace_config_dir() -> Result<PathBuf> {
     let base = env::var("XDG_CONFIG_HOME")
         .map(PathBuf::from)
@@ -48,10 +48,10 @@ fn devspace_config_dir() -> Result<PathBuf> {
                 .join(".config")
         });
 
-    Ok(base.join("devspace"))
+    Ok(base.join("devws"))
 }
 
-/// Get the path to the devspace config file
+/// Get the path to the devws config file
 fn config_file() -> Result<PathBuf> {
     Ok(devspace_config_dir()?.join("config.toml"))
 }
@@ -61,7 +61,7 @@ fn profiles_dir() -> Result<PathBuf> {
     Ok(devspace_config_dir()?.join("profiles"))
 }
 
-/// Read the devspace configuration, creating it if it doesn't exist
+/// Read the devws configuration, creating it if it doesn't exist
 pub fn read_config() -> Result<DevspaceConfig> {
     let config_path = config_file()?;
 
@@ -79,7 +79,7 @@ pub fn read_config() -> Result<DevspaceConfig> {
         .with_context(|| format!("Failed to parse config from {:?}", config_path))
 }
 
-/// Write the devspace configuration
+/// Write the devws configuration
 pub fn write_config(config: &DevspaceConfig) -> Result<()> {
     let config_path = config_file()?;
 

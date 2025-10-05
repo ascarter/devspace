@@ -1,8 +1,8 @@
 use clap::{Parser, Subcommand};
 
-/// Personal development environment manager
+/// Developer Workspace - Personal development environment manager
 ///
-/// devspace manages your dotfiles and development tools through declarative
+/// devws manages your dotfiles and development tools through declarative
 /// manifests. Bootstrap new machines, sync configurations, and maintain your
 /// dev environment with a single portable binary.
 #[derive(Parser, Debug)]
@@ -77,22 +77,22 @@ pub enum Commands {
         profile: Option<String>,
     },
 
-    /// Manage devspace itself
+    /// Manage devws itself
     #[command(subcommand)]
     Self_(SelfAction),
 }
 
 #[derive(Subcommand, Debug)]
 pub enum SelfAction {
-    /// Show devspace information (version, disk usage, profiles)
+    /// Show devws information (version, disk usage, profiles)
     #[command(name = "info")]
     Info,
 
-    /// Update devspace to latest version
+    /// Update devws to latest version
     #[command(name = "update")]
     Update,
 
-    /// Uninstall devspace and remove all data
+    /// Uninstall devws and remove all data
     #[command(name = "uninstall")]
     Uninstall,
 }

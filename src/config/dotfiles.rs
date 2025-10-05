@@ -14,7 +14,7 @@ const BUILTIN_IGNORES: &[&str] = &[
 /// Represents a dotfile configuration entry that should be installed
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigEntry {
-    /// Source path in the profile (e.g., ~/.config/devspace/profiles/default/config/.zshrc)
+    /// Source path in the profile (e.g., ~/.config/devws/profiles/default/config/.zshrc)
     pub source: PathBuf,
     /// Target path in home directory (e.g., ~/.zshrc)
     pub target: PathBuf,

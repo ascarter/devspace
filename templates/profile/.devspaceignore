@@ -1,4 +1,4 @@
-# devspace ignore patterns
+# devws ignore patterns
 #
 # Files matching these patterns will not be symlinked to your home directory
 # Syntax:

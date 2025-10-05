@@ -40,7 +40,7 @@ pub fn execute(cli: Cli) -> Result<()> {
             let active = config::get_active_profile().unwrap_or_else(|_| "none".to_string());
 
             if profiles.is_empty() {
-                println!("No profiles found. Create one with: devspace init");
+                println!("No profiles found. Create one with: devws init");
                 return Ok(());
             }
 
@@ -103,22 +103,22 @@ pub fn execute(cli: Cli) -> Result<()> {
 
         Commands::Self_(action) => match action {
             SelfAction::Info => {
-                println!("TODO: Show devspace version");
+                println!("TODO: Show devws version");
                 println!("TODO: Show disk usage");
                 println!("TODO: Show profile count");
                 Ok(())
             }
             SelfAction::Update => {
-                println!("TODO: Check for devspace updates");
+                println!("TODO: Check for devws updates");
                 println!("TODO: Download and install new version");
                 Ok(())
             }
             SelfAction::Uninstall => {
                 println!("TODO: Confirm uninstall (like rustup)");
                 println!("TODO: Remove binary");
-                println!("TODO: Remove ~/.config/devspace");
-                println!("TODO: Remove ~/.local/state/devspace");
-                println!("TODO: Remove ~/.cache/devspace");
+                println!("TODO: Remove ~/.config/devws");
+                println!("TODO: Remove ~/.local/state/devws");
+                println!("TODO: Remove ~/.cache/devws");
                 println!("TODO: Remove shell integration");
                 Ok(())
             }
