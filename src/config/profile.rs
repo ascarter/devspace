@@ -223,8 +223,8 @@ pub fn create_profile(name: &str) -> Result<Profile> {
 /// Switch to a different profile (atomic symlink management)
 pub fn switch_profile(name: &str) -> Result<()> {
     // Verify the profile exists
-    let new_profile = get_profile(name)?
-        .ok_or_else(|| anyhow::anyhow!("Profile '{}' does not exist", name))?;
+    let new_profile =
+        get_profile(name)?.ok_or_else(|| anyhow::anyhow!("Profile '{}' does not exist", name))?;
 
     // Get home directory
     let home_dir = directories::BaseDirs::new()
@@ -488,9 +488,6 @@ mod tests {
 
         let result = switch_profile("nonexistent");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("does not exist"));
+        assert!(result.unwrap_err().to_string().contains("does not exist"));
     }
 }

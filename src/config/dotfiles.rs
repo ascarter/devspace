@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 const BUILTIN_IGNORES: &[&str] = &[
     ".git",
     ".DS_Store",
-    ".devspaceignore",  // Don't symlink the ignore file itself
+    ".devspaceignore", // Don't symlink the ignore file itself
 ];
 
 /// Represents a dotfile configuration entry that should be installed
@@ -258,9 +258,7 @@ mod tests {
         assert_eq!(entries.len(), 2);
 
         // Check that entries point to correct locations
-        let has_zshrc = entries
-            .iter()
-            .any(|e| e.target == home_dir.join(".zshrc"));
+        let has_zshrc = entries.iter().any(|e| e.target == home_dir.join(".zshrc"));
         let has_gitconfig = entries
             .iter()
             .any(|e| e.target == home_dir.join(".gitconfig"));
@@ -369,10 +367,7 @@ mod tests {
     fn test_config_entry_should_ignore_builtin() {
         let patterns = vec![];
 
-        let git = ConfigEntry::new(
-            PathBuf::from("/config/.git"),
-            PathBuf::from("/home/.git"),
-        );
+        let git = ConfigEntry::new(PathBuf::from("/config/.git"), PathBuf::from("/home/.git"));
         assert!(git.should_ignore(&patterns));
 
         let ds_store = ConfigEntry::new(
