@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 const BUILTIN_IGNORES: &[&str] = &[
     ".git",
     ".DS_Store",
-    ".devspaceignore", // Don't symlink the ignore file itself
+    ".devwsignore", // Don't symlink the ignore file itself
 ];
 
 /// Represents a dotfile configuration entry that should be installed
@@ -95,17 +95,17 @@ impl ConfigEntry {
     }
 }
 
-/// Manages configuration for a profile
-pub struct ProfileConfiguration {
+/// Manages configuration files (dotfiles) for a profile
+pub struct Config {
     /// Path to the profile's config directory
     config_dir: PathBuf,
     /// Target directory (usually home directory)
     target_dir: PathBuf,
-    /// Ignore patterns loaded from .devspaceignore
+    /// Ignore patterns loaded from .devwsignore
     ignore_patterns: Vec<String>,
 }
 
-impl ProfileConfiguration {
+impl Config {
     /// Create a new profile configuration
     pub fn new(config_dir: PathBuf, target_dir: PathBuf) -> Self {
         let ignore_patterns = Self::load_ignore_patterns(&config_dir);
@@ -116,9 +116,9 @@ impl ProfileConfiguration {
         }
     }
 
-    /// Load ignore patterns from .devspaceignore file
+    /// Load ignore patterns from .devwsignore file
     fn load_ignore_patterns(config_dir: &Path) -> Vec<String> {
-        let ignore_file = config_dir.join(".devspaceignore");
+        let ignore_file = config_dir.join(".devwsignore");
 
         if !ignore_file.exists() {
             return Vec::new();
@@ -235,7 +235,7 @@ mod tests {
         fs::create_dir_all(&config_dir).unwrap();
         fs::create_dir_all(&home_dir).unwrap();
 
-        let config = ProfileConfiguration::new(config_dir, home_dir);
+        let config = Config::new(config_dir, home_dir);
         let entries = config.discover_entries().unwrap();
         assert!(entries.is_empty());
     }
@@ -253,7 +253,7 @@ mod tests {
         fs::write(config_dir.join(".zshrc"), "test").unwrap();
         fs::write(config_dir.join(".gitconfig"), "test").unwrap();
 
-        let config = ProfileConfiguration::new(config_dir, home_dir.clone());
+        let config = Config::new(config_dir, home_dir.clone());
         let entries = config.discover_entries().unwrap();
         assert_eq!(entries.len(), 2);
 
@@ -268,7 +268,7 @@ mod tests {
     }
 
     #[test]
-    fn test_profile_configuration_respects_devspaceignore() {
+    fn test_profile_configuration_respects_devwsignore() {
         let temp = TempDir::new().unwrap();
         let config_dir = temp.path().join("config");
         let home_dir = temp.path().join("home");
@@ -276,13 +276,13 @@ mod tests {
         fs::create_dir_all(&config_dir).unwrap();
         fs::create_dir_all(&home_dir).unwrap();
 
-        // Create .devspaceignore to ignore .gitkeep
-        fs::write(config_dir.join(".devspaceignore"), ".gitkeep\n").unwrap();
+        // Create .devwsignore to ignore .gitkeep
+        fs::write(config_dir.join(".devwsignore"), ".gitkeep\n").unwrap();
 
         fs::write(config_dir.join(".gitkeep"), "").unwrap();
         fs::write(config_dir.join(".zshrc"), "test").unwrap();
 
-        let config = ProfileConfiguration::new(config_dir, home_dir.clone());
+        let config = Config::new(config_dir, home_dir.clone());
         let entries = config.discover_entries().unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].target, home_dir.join(".zshrc"));
@@ -305,7 +305,7 @@ mod tests {
         fs::write(config_dir.join(".zshrc"), "test").unwrap();
         fs::write(config_dir.join(".gitconfig"), "test").unwrap();
 
-        let config = ProfileConfiguration::new(config_dir, home_dir.clone());
+        let config = Config::new(config_dir, home_dir.clone());
         let entries = config.discover_entries().unwrap();
         assert_eq!(entries.len(), 2);
 
@@ -388,7 +388,7 @@ mod tests {
 
         fs::write(config_dir.join(".zshrc"), "test").unwrap();
 
-        let config = ProfileConfiguration::new(config_dir.clone(), home_dir.clone());
+        let config = Config::new(config_dir.clone(), home_dir.clone());
         let installed = config.install().unwrap();
 
         assert_eq!(installed.len(), 1);
@@ -421,7 +421,7 @@ mod tests {
         fs::write(&regular_file, "content").unwrap();
 
         // Uninstall
-        let config = ProfileConfiguration::new(config_dir, home_dir);
+        let config = Config::new(config_dir, home_dir);
         let removed = config.uninstall().unwrap();
 
         assert_eq!(removed.len(), 1);

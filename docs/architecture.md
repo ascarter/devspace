@@ -71,7 +71,7 @@ devws env [profile]         # Output env setup for shell init
 eval "$(devws env)"
 ```
 
-`devws env` reads `~/.config/devws/config.toml` (or `$DEVSPACE_PROFILE`) and outputs:
+`devws env` reads `~/.config/devws/config.toml` (or `$DEVWS_PROFILE`) and outputs:
 ```bash
 export PATH="$HOME/.local/state/devws/environments/default/bin:$PATH"
 export MANPATH="$HOME/.local/state/devws/environments/default/share/man:$MANPATH"

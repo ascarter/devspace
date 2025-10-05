@@ -6,7 +6,7 @@
 #   - Wildcard: *.log, *.tmp
 #   - Comments: Lines starting with #
 #
-# Note: .git, .DS_Store, and .devspaceignore are always ignored (built-in)
+# Note: .git, .DS_Store, and .devwsignore are always ignored (built-in)
 
 # Version control and editor files
 .gitkeep

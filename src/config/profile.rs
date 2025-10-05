@@ -4,13 +4,13 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 
-use super::dotfiles::ProfileConfiguration;
+use super::config::Config;
 
 // Template files embedded at compile time
 const CLI_TEMPLATE: &str = include_str!("../../templates/profile/cli.toml");
 const MACOS_TEMPLATE: &str = include_str!("../../templates/profile/macos.toml");
 const README_TEMPLATE: &str = include_str!("../../templates/profile/README.md");
-const DEVSPACEIGNORE_TEMPLATE: &str = include_str!("../../templates/profile/.devspaceignore");
+const DEVWSIGNORE_TEMPLATE: &str = include_str!("../../templates/profile/.devwsignore");
 
 /// devws configuration stored in ~/.config/devws/config.toml
 #[derive(Debug, Serialize, Deserialize)]
@@ -38,7 +38,7 @@ pub struct Profile {
 /// Get the XDG config directory for devws
 ///
 /// Returns `$XDG_CONFIG_HOME/devws` or `~/.config/devws` if not set
-fn devspace_config_dir() -> Result<PathBuf> {
+fn devws_config_dir() -> Result<PathBuf> {
     let base = env::var("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
@@ -53,12 +53,38 @@ fn devspace_config_dir() -> Result<PathBuf> {
 
 /// Get the path to the devws config file
 fn config_file() -> Result<PathBuf> {
-    Ok(devspace_config_dir()?.join("config.toml"))
+    Ok(devws_config_dir()?.join("config.toml"))
 }
 
 /// Get the path to the profiles directory
 fn profiles_dir() -> Result<PathBuf> {
-    Ok(devspace_config_dir()?.join("profiles"))
+    Ok(devws_config_dir()?.join("profiles"))
+}
+
+/// Get the XDG state directory for devws
+///
+/// Returns `$XDG_STATE_HOME/devws` or `~/.local/state/devws` if not set
+fn devws_state_dir() -> Result<PathBuf> {
+    let base = env::var("XDG_STATE_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            directories::BaseDirs::new()
+                .expect("Failed to get home directory")
+                .home_dir()
+                .join(".local/state")
+        });
+
+    Ok(base.join("devws"))
+}
+
+/// Get the environment directory for a specific profile
+///
+/// Returns `$XDG_STATE_HOME/devws/environments/{profile}` or `~/.local/state/devws/environments/{profile}`
+///
+/// This is an internal helper used by ShellEnvironment. External consumers should use
+/// ShellEnvironment::new() instead of calling this directly.
+pub(crate) fn get_environment_dir(profile_name: &str) -> Result<PathBuf> {
+    Ok(devws_state_dir()?.join("environments").join(profile_name))
 }
 
 /// Read the devws configuration, creating it if it doesn't exist
@@ -100,7 +126,7 @@ pub fn write_config(config: &DevspaceConfig) -> Result<()> {
 /// Get the currently active profile name
 pub fn get_active_profile() -> Result<String> {
     // Check environment variable first
-    if let Ok(profile) = std::env::var("DEVSPACE_PROFILE") {
+    if let Ok(profile) = std::env::var("DEVWS_PROFILE") {
         return Ok(profile);
     }
 
@@ -189,9 +215,9 @@ pub fn create_profile(name: &str) -> Result<Profile> {
     // Create .gitkeep in config/ so git tracks empty directory
     fs::write(config_dir.join(".gitkeep"), "").context("Failed to create .gitkeep in config/")?;
 
-    // Create .devspaceignore in config/ directory
-    fs::write(config_dir.join(".devspaceignore"), DEVSPACEIGNORE_TEMPLATE)
-        .context("Failed to create config/.devspaceignore")?;
+    // Create .devwsignore in config/ directory
+    fs::write(config_dir.join(".devwsignore"), DEVWSIGNORE_TEMPLATE)
+        .context("Failed to create config/.devwsignore")?;
 
     // Create manifests from embedded templates
     fs::write(manifests_dir.join("cli.toml"), CLI_TEMPLATE)
@@ -236,7 +262,7 @@ pub fn switch_profile(name: &str) -> Result<()> {
     if let Ok(current_profile_name) = get_active_profile() {
         if let Some(current_profile) = get_profile(&current_profile_name)? {
             let config_dir = current_profile.path.join("config");
-            let old_config = ProfileConfiguration::new(config_dir, home_dir.clone());
+            let old_config = Config::new(config_dir, home_dir.clone());
             old_config
                 .uninstall()
                 .context("Failed to uninstall old profile")?;
@@ -245,7 +271,7 @@ pub fn switch_profile(name: &str) -> Result<()> {
 
     // Install new profile's config entries
     let new_config_dir = new_profile.path.join("config");
-    let new_config = ProfileConfiguration::new(new_config_dir, home_dir);
+    let new_config = Config::new(new_config_dir, home_dir);
     new_config
         .install()
         .context("Failed to install new profile")?;
@@ -340,13 +366,13 @@ mod tests {
         let _temp = setup_test_env();
 
         // Set env var
-        std::env::set_var("DEVSPACE_PROFILE", "env-profile");
+        std::env::set_var("DEVWS_PROFILE", "env-profile");
 
         let active = get_active_profile().unwrap();
         assert_eq!(active, "env-profile");
 
         // Clean up
-        std::env::remove_var("DEVSPACE_PROFILE");
+        std::env::remove_var("DEVWS_PROFILE");
     }
 
     #[test]
@@ -415,7 +441,7 @@ mod tests {
         // Verify directory structure
         assert!(profile.path.join("config").exists());
         assert!(profile.path.join("config/.gitkeep").exists());
-        assert!(profile.path.join("config/.devspaceignore").exists());
+        assert!(profile.path.join("config/.devwsignore").exists());
         assert!(profile.path.join("manifests").exists());
         assert!(profile.path.join("manifests/cli.toml").exists());
         assert!(profile.path.join("manifests/macos.toml").exists());

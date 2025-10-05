@@ -86,18 +86,34 @@ pub fn execute(cli: Cli) -> Result<()> {
             Ok(())
         }
 
-        Commands::Env { profile } => {
-            let profile_name = profile.unwrap_or_else(|| {
-                println!("TODO: Read active profile from config or $DEVSPACE_PROFILE");
-                "default".to_string()
-            });
-            println!(
-                "TODO: Output environment setup for profile: {}",
-                profile_name
-            );
-            println!("TODO: export PATH=...");
-            println!("TODO: export MANPATH=...");
-            println!("TODO: fpath=...");
+        Commands::Env { profile, shell } => {
+            // Determine which profile to use:
+            // 1. Explicit --profile argument
+            // 2. $DEVWS_PROFILE environment variable
+            // 3. Active profile from config
+            let profile_name = if let Some(name) = profile {
+                name
+            } else if let Ok(env_profile) = std::env::var("DEVWS_PROFILE") {
+                env_profile
+            } else {
+                config::get_active_profile().unwrap_or_else(|_| "default".to_string())
+            };
+
+            // Parse shell type
+            let shell_type = match shell.to_lowercase().as_str() {
+                "zsh" => config::Shell::Zsh,
+                "bash" => config::Shell::Bash,
+                "fish" => config::Shell::Fish,
+                _ => {
+                    eprintln!("Unknown shell: {}. Defaulting to zsh.", shell);
+                    config::Shell::Zsh
+                }
+            };
+
+            // Generate and output shell environment
+            let env = config::ShellEnvironment::new(&profile_name)?;
+            println!("{}", env.format_for_shell(shell_type));
+
             Ok(())
         }
 

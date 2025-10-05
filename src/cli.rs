@@ -75,6 +75,10 @@ pub enum Commands {
         /// Profile name (defaults to active profile)
         #[arg(value_name = "PROFILE")]
         profile: Option<String>,
+
+        /// Shell type (zsh, bash, fish)
+        #[arg(short, long, value_name = "SHELL", default_value = "zsh")]
+        shell: String,
     },
 
     /// Manage devws itself
