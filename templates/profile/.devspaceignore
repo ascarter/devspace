@@ -1,0 +1,25 @@
+# devspace ignore patterns
+#
+# Files matching these patterns will not be symlinked to your home directory
+# Syntax:
+#   - Exact match: filename.txt
+#   - Wildcard: *.log, *.tmp
+#   - Comments: Lines starting with #
+#
+# Note: .git, .DS_Store, and .devspaceignore are always ignored (built-in)
+
+# Version control and editor files
+.gitkeep
+.gitignore
+.gitattributes
+
+# Documentation (usually not dotfiles to symlink)
+README.md
+LICENSE
+CONTRIBUTING.md
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~

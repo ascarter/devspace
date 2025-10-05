@@ -1,4 +1,5 @@
 use crate::cli::{Cli, Commands, SelfAction};
+use crate::config;
 use anyhow::Result;
 
 pub fn execute(cli: Cli) -> Result<()> {
@@ -28,15 +29,27 @@ pub fn execute(cli: Cli) -> Result<()> {
         }
 
         Commands::Use { name } => {
-            println!("TODO: Switch to profile: {}", name);
-            println!("TODO: Remove old profile symlinks from ~");
-            println!("TODO: Create new profile symlinks to ~");
-            println!("TODO: Update active profile in config");
+            config::switch_profile(&name)?;
+            println!("Switched to profile: {}", name);
+            println!("Run 'exec $SHELL' to reload your shell environment");
             Ok(())
         }
 
         Commands::List => {
-            println!("TODO: List available profiles");
+            let profiles = config::list_profiles()?;
+            let active = config::get_active_profile().unwrap_or_else(|_| "none".to_string());
+
+            if profiles.is_empty() {
+                println!("No profiles found. Create one with: devspace init");
+                return Ok(());
+            }
+
+            println!("Available profiles:");
+            for profile in profiles {
+                let marker = if profile.name == active { "*" } else { " " };
+                println!("{} {}", marker, profile.name);
+            }
+
             Ok(())
         }
 

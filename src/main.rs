@@ -1,10 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
-
-mod cli;
-mod commands;
-
-use cli::Cli;
+use devspace::cli::Cli;
+use devspace::commands;
 
 fn main() -> Result<()> {
     // Initialize tracing

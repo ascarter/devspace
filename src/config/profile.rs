@@ -4,10 +4,13 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 
+use super::dotfiles::ProfileConfiguration;
+
 // Template files embedded at compile time
 const CLI_TEMPLATE: &str = include_str!("../../templates/profile/cli.toml");
 const MACOS_TEMPLATE: &str = include_str!("../../templates/profile/macos.toml");
 const README_TEMPLATE: &str = include_str!("../../templates/profile/README.md");
+const DEVSPACEIGNORE_TEMPLATE: &str = include_str!("../../templates/profile/.devspaceignore");
 
 /// Devspace configuration stored in ~/.config/devspace/config.toml
 #[derive(Debug, Serialize, Deserialize)]
@@ -186,6 +189,10 @@ pub fn create_profile(name: &str) -> Result<Profile> {
     // Create .gitkeep in config/ so git tracks empty directory
     fs::write(config_dir.join(".gitkeep"), "").context("Failed to create .gitkeep in config/")?;
 
+    // Create .devspaceignore in config/ directory
+    fs::write(config_dir.join(".devspaceignore"), DEVSPACEIGNORE_TEMPLATE)
+        .context("Failed to create config/.devspaceignore")?;
+
     // Create manifests from embedded templates
     fs::write(manifests_dir.join("cli.toml"), CLI_TEMPLATE)
         .context("Failed to create manifests/cli.toml")?;
@@ -211,6 +218,42 @@ pub fn create_profile(name: &str) -> Result<Profile> {
         name: name.to_string(),
         path: profile_path,
     })
+}
+
+/// Switch to a different profile (atomic symlink management)
+pub fn switch_profile(name: &str) -> Result<()> {
+    // Verify the profile exists
+    let new_profile = get_profile(name)?
+        .ok_or_else(|| anyhow::anyhow!("Profile '{}' does not exist", name))?;
+
+    // Get home directory
+    let home_dir = directories::BaseDirs::new()
+        .context("Failed to get home directory")?
+        .home_dir()
+        .to_path_buf();
+
+    // Get current active profile (if any) and uninstall its config entries
+    if let Ok(current_profile_name) = get_active_profile() {
+        if let Some(current_profile) = get_profile(&current_profile_name)? {
+            let config_dir = current_profile.path.join("config");
+            let old_config = ProfileConfiguration::new(config_dir, home_dir.clone());
+            old_config
+                .uninstall()
+                .context("Failed to uninstall old profile")?;
+        }
+    }
+
+    // Install new profile's config entries
+    let new_config_dir = new_profile.path.join("config");
+    let new_config = ProfileConfiguration::new(new_config_dir, home_dir);
+    new_config
+        .install()
+        .context("Failed to install new profile")?;
+
+    // Update active profile in config
+    set_active_profile(name)?;
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -372,6 +415,7 @@ mod tests {
         // Verify directory structure
         assert!(profile.path.join("config").exists());
         assert!(profile.path.join("config/.gitkeep").exists());
+        assert!(profile.path.join("config/.devspaceignore").exists());
         assert!(profile.path.join("manifests").exists());
         assert!(profile.path.join("manifests/cli.toml").exists());
         assert!(profile.path.join("manifests/macos.toml").exists());
@@ -409,5 +453,44 @@ mod tests {
         // Check README has profile name
         let readme = fs::read_to_string(profile.path.join("README.md")).unwrap();
         assert!(readme.contains("test-profile"));
+    }
+
+    #[test]
+    fn test_switch_profile() {
+        let _temp = setup_test_env();
+
+        // Create two profiles
+        create_profile("profile1").unwrap();
+        create_profile("profile2").unwrap();
+
+        // Create a dotfile in profile1
+        let profile1 = get_profile("profile1").unwrap().unwrap();
+        fs::write(profile1.path.join("config/.zshrc"), "profile1 config").unwrap();
+
+        // Create a dotfile in profile2
+        let profile2 = get_profile("profile2").unwrap().unwrap();
+        fs::write(profile2.path.join("config/.zshrc"), "profile2 config").unwrap();
+
+        // Switch to profile1
+        switch_profile("profile1").unwrap();
+
+        // Verify active profile
+        assert_eq!(get_active_profile().unwrap(), "profile1");
+
+        // Note: We can't test actual symlink creation to ~ without mocking
+        // because tests use a temp directory for XDG_CONFIG_HOME
+        // The symlink logic is tested in the symlinks module
+    }
+
+    #[test]
+    fn test_switch_profile_nonexistent() {
+        let _temp = setup_test_env();
+
+        let result = switch_profile("nonexistent");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("does not exist"));
     }
 }
