@@ -14,9 +14,9 @@ const BUILTIN_IGNORES: &[&str] = &[
 /// Represents a dotfile configuration entry that should be installed
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigEntry {
-    /// Source path in the profile (e.g., ~/.config/devws/profiles/default/config/.zshrc)
+    /// Source path in workspace (e.g., $XDG_CONFIG_HOME/devws/config/zsh/.zshrc)
     pub source: PathBuf,
-    /// Target path in home directory (e.g., ~/.zshrc)
+    /// Target path in XDG_CONFIG_HOME (e.g., $XDG_CONFIG_HOME/zsh/.zshrc)
     pub target: PathBuf,
 }
 
@@ -95,11 +95,11 @@ impl ConfigEntry {
     }
 }
 
-/// Manages configuration files (dotfiles) for a profile
+/// Manages configuration files (dotfiles) for the workspace
 pub struct Config {
-    /// Path to the profile's config directory
+    /// Path to the workspace's config directory
     config_dir: PathBuf,
-    /// Target directory (usually home directory)
+    /// Target directory ($XDG_CONFIG_HOME, default: ~/.config)
     target_dir: PathBuf,
     /// Ignore patterns loaded from .devwsignore
     ignore_patterns: Vec<String>,
@@ -243,79 +243,88 @@ mod tests {
     #[test]
     fn test_profile_configuration_discover_entries_with_files() {
         let temp = TempDir::new().unwrap();
-        let config_dir = temp.path().join("config");
-        let home_dir = temp.path().join("home");
+        let profile_config_dir = temp.path().join("profile/config");
+        let xdg_config_home = temp.path().join("xdg_config");
 
-        fs::create_dir_all(&config_dir).unwrap();
-        fs::create_dir_all(&home_dir).unwrap();
+        fs::create_dir_all(&profile_config_dir).unwrap();
+        fs::create_dir_all(&xdg_config_home).unwrap();
 
-        // Create some test files
-        fs::write(config_dir.join(".zshrc"), "test").unwrap();
-        fs::write(config_dir.join(".gitconfig"), "test").unwrap();
+        // Create XDG-style structure: config/zsh/.zshrc, config/git/config
+        fs::create_dir_all(profile_config_dir.join("zsh")).unwrap();
+        fs::create_dir_all(profile_config_dir.join("git")).unwrap();
+        fs::write(profile_config_dir.join("zsh/.zshrc"), "test").unwrap();
+        fs::write(profile_config_dir.join("git/config"), "test").unwrap();
 
-        let config = Config::new(config_dir, home_dir.clone());
+        let config = Config::new(profile_config_dir, xdg_config_home.clone());
         let entries = config.discover_entries().unwrap();
         assert_eq!(entries.len(), 2);
 
-        // Check that entries point to correct locations
-        let has_zshrc = entries.iter().any(|e| e.target == home_dir.join(".zshrc"));
-        let has_gitconfig = entries
+        // Check that entries point to XDG_CONFIG_HOME locations
+        let has_zsh_dir = entries
             .iter()
-            .any(|e| e.target == home_dir.join(".gitconfig"));
+            .any(|e| e.target == xdg_config_home.join("zsh"));
+        let has_git_dir = entries
+            .iter()
+            .any(|e| e.target == xdg_config_home.join("git"));
 
-        assert!(has_zshrc);
-        assert!(has_gitconfig);
+        assert!(has_zsh_dir);
+        assert!(has_git_dir);
     }
 
     #[test]
     fn test_profile_configuration_respects_devwsignore() {
         let temp = TempDir::new().unwrap();
-        let config_dir = temp.path().join("config");
-        let home_dir = temp.path().join("home");
+        let profile_config_dir = temp.path().join("profile/config");
+        let xdg_config_home = temp.path().join("xdg_config");
 
-        fs::create_dir_all(&config_dir).unwrap();
-        fs::create_dir_all(&home_dir).unwrap();
+        fs::create_dir_all(&profile_config_dir).unwrap();
+        fs::create_dir_all(&xdg_config_home).unwrap();
 
         // Create .devwsignore to ignore .gitkeep
-        fs::write(config_dir.join(".devwsignore"), ".gitkeep\n").unwrap();
+        fs::write(profile_config_dir.join(".devwsignore"), ".gitkeep\n").unwrap();
 
-        fs::write(config_dir.join(".gitkeep"), "").unwrap();
-        fs::write(config_dir.join(".zshrc"), "test").unwrap();
+        fs::write(profile_config_dir.join(".gitkeep"), "").unwrap();
+        fs::create_dir_all(profile_config_dir.join("zsh")).unwrap();
+        fs::write(profile_config_dir.join("zsh/.zshrc"), "test").unwrap();
 
-        let config = Config::new(config_dir, home_dir.clone());
+        let config = Config::new(profile_config_dir, xdg_config_home.clone());
         let entries = config.discover_entries().unwrap();
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].target, home_dir.join(".zshrc"));
+        assert_eq!(entries[0].target, xdg_config_home.join("zsh"));
     }
 
     #[test]
     fn test_profile_configuration_builtin_ignores() {
         let temp = TempDir::new().unwrap();
-        let config_dir = temp.path().join("config");
-        let home_dir = temp.path().join("home");
+        let profile_config_dir = temp.path().join("profile/config");
+        let xdg_config_home = temp.path().join("xdg_config");
 
-        fs::create_dir_all(&config_dir).unwrap();
-        fs::create_dir_all(&home_dir).unwrap();
+        fs::create_dir_all(&profile_config_dir).unwrap();
+        fs::create_dir_all(&xdg_config_home).unwrap();
 
-        // Create files that should be ignored by built-in rules
-        fs::create_dir_all(config_dir.join(".git")).unwrap();
-        fs::write(config_dir.join(".DS_Store"), "").unwrap();
+        // Create files/dirs that should be ignored by built-in rules
+        fs::create_dir_all(profile_config_dir.join(".git")).unwrap();
+        fs::write(profile_config_dir.join(".DS_Store"), "").unwrap();
 
-        // Create files that should be discovered
-        fs::write(config_dir.join(".zshrc"), "test").unwrap();
-        fs::write(config_dir.join(".gitconfig"), "test").unwrap();
+        // Create XDG structure that should be discovered
+        fs::create_dir_all(profile_config_dir.join("zsh")).unwrap();
+        fs::create_dir_all(profile_config_dir.join("git")).unwrap();
+        fs::write(profile_config_dir.join("zsh/.zshrc"), "test").unwrap();
+        fs::write(profile_config_dir.join("git/config"), "test").unwrap();
 
-        let config = Config::new(config_dir, home_dir.clone());
+        let config = Config::new(profile_config_dir, xdg_config_home.clone());
         let entries = config.discover_entries().unwrap();
         assert_eq!(entries.len(), 2);
 
-        let has_zshrc = entries.iter().any(|e| e.target == home_dir.join(".zshrc"));
-        let has_gitconfig = entries
+        let has_zsh = entries
             .iter()
-            .any(|e| e.target == home_dir.join(".gitconfig"));
+            .any(|e| e.target == xdg_config_home.join("zsh"));
+        let has_git = entries
+            .iter()
+            .any(|e| e.target == xdg_config_home.join("git"));
 
-        assert!(has_zshrc);
-        assert!(has_gitconfig);
+        assert!(has_zsh);
+        assert!(has_git);
     }
 
     #[test]
@@ -380,53 +389,53 @@ mod tests {
     #[test]
     fn test_profile_configuration_install() {
         let temp = TempDir::new().unwrap();
-        let config_dir = temp.path().join("config");
-        let home_dir = temp.path().join("home");
+        let profile_config_dir = temp.path().join("profile/config");
+        let xdg_config_home = temp.path().join("xdg_config");
 
-        fs::create_dir_all(&config_dir).unwrap();
-        fs::create_dir_all(&home_dir).unwrap();
+        fs::create_dir_all(profile_config_dir.join("zsh")).unwrap();
+        fs::create_dir_all(&xdg_config_home).unwrap();
 
-        fs::write(config_dir.join(".zshrc"), "test").unwrap();
+        fs::write(profile_config_dir.join("zsh/.zshrc"), "test").unwrap();
 
-        let config = Config::new(config_dir.clone(), home_dir.clone());
+        let config = Config::new(profile_config_dir.clone(), xdg_config_home.clone());
         let installed = config.install().unwrap();
 
         assert_eq!(installed.len(), 1);
-        assert_eq!(installed[0], home_dir.join(".zshrc"));
+        assert_eq!(installed[0], xdg_config_home.join("zsh"));
 
         // Verify symlink was created
         let link_target = fs::read_link(&installed[0]).unwrap();
-        assert_eq!(link_target, config_dir.join(".zshrc"));
+        assert_eq!(link_target, profile_config_dir.join("zsh"));
     }
 
     #[test]
     fn test_profile_configuration_uninstall() {
         let temp = TempDir::new().unwrap();
-        let config_dir = temp.path().join("config");
-        let home_dir = temp.path().join("home");
+        let profile_config_dir = temp.path().join("profile/config");
+        let xdg_config_home = temp.path().join("xdg_config");
 
-        fs::create_dir_all(&config_dir).unwrap();
-        fs::create_dir_all(&home_dir).unwrap();
+        fs::create_dir_all(profile_config_dir.join("zsh")).unwrap();
+        fs::create_dir_all(&xdg_config_home).unwrap();
 
-        // Create a file in config
-        let config_file = config_dir.join("test.txt");
-        fs::write(&config_file, "content").unwrap();
+        // Create a file in profile config
+        let config_zsh_dir = profile_config_dir.join("zsh");
+        fs::write(config_zsh_dir.join(".zshrc"), "content").unwrap();
 
-        // Create config entry in home pointing to config
-        let entry_path = home_dir.join("test.txt");
-        symlink(&config_file, &entry_path).unwrap();
+        // Create symlink in XDG_CONFIG_HOME pointing to profile config
+        let entry_path = xdg_config_home.join("zsh");
+        symlink(&config_zsh_dir, &entry_path).unwrap();
 
-        // Create a regular file (should not be removed)
-        let regular_file = home_dir.join("regular.txt");
-        fs::write(&regular_file, "content").unwrap();
+        // Create a regular directory (should not be removed)
+        let regular_dir = xdg_config_home.join("other");
+        fs::create_dir_all(&regular_dir).unwrap();
 
         // Uninstall
-        let config = Config::new(config_dir, home_dir);
+        let config = Config::new(profile_config_dir, xdg_config_home);
         let removed = config.uninstall().unwrap();
 
         assert_eq!(removed.len(), 1);
         assert_eq!(removed[0], entry_path);
         assert!(!entry_path.exists());
-        assert!(regular_file.exists());
+        assert!(regular_dir.exists());
     }
 }

@@ -18,44 +18,36 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Initialize shell integration and optionally clone a profile
+    /// Initialize workspace (create template or use existing/cloned repo)
+    ///
+    /// Use cases:
+    /// - New machine, no workspace: Creates template at $XDG_CONFIG_HOME/devws
+    /// - Workspace exists (manually cloned): Uses existing workspace
+    /// - With <repository>: Clones repository (warns if workspace exists)
+    /// - Run multiple times for different shells (updates shell integration only)
     Init {
-        /// Shell type (bash, zsh, fish)
-        #[arg(value_name = "SHELL")]
-        shell: Option<String>,
-
         /// Git repository URL or GitHub shorthand (user/repo) to clone
         #[arg(value_name = "REPOSITORY")]
         repository: Option<String>,
 
-        /// Profile name (defaults to 'default')
+        /// Shell type (auto-detects from $SHELL if not specified)
+        #[arg(short, long, value_name = "SHELL")]
+        shell: Option<String>,
+
+        /// Force overwrite existing workspace
         #[arg(short, long)]
-        name: Option<String>,
+        force: bool,
     },
 
-    /// Clone a profile from a Git repository
-    Clone {
-        /// Git repository URL or GitHub shorthand (user/repo)
-        #[arg(value_name = "REPOSITORY")]
-        repository: String,
-
-        /// Profile name (defaults to 'default')
-        #[arg(short, long)]
-        name: Option<String>,
-    },
-
-    /// Switch to a different profile
-    Use {
-        /// Profile name to activate
-        #[arg(value_name = "PROFILE")]
-        name: String,
-    },
-
-    /// List available profiles
-    List,
-
-    /// Sync profile and install/update tools
+    /// Sync workspace (git pull + reinstall configs/tools)
     Sync,
+
+    /// Reset workspace (clean git state + reinstall everything)
+    Reset {
+        /// Force reset without confirmation
+        #[arg(short, long)]
+        force: bool,
+    },
 
     /// Update tools (respects version pins)
     Update {
@@ -64,18 +56,14 @@ pub enum Commands {
         name: Option<String>,
     },
 
-    /// Show environment status
+    /// Show workspace status
     Status,
 
-    /// Check environment health and repair issues
-    Doctor,
+    /// Clean up unused cache and orphaned symlinks
+    Cleanup,
 
     /// Output environment setup (used in shell init)
     Env {
-        /// Profile name (defaults to active profile)
-        #[arg(value_name = "PROFILE")]
-        profile: Option<String>,
-
         /// Shell type (zsh, bash, fish)
         #[arg(short, long, value_name = "SHELL", default_value = "zsh")]
         shell: String,

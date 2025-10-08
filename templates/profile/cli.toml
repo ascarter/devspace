@@ -1,5 +1,8 @@
 # Cross-platform CLI tools
 #
+# Tools defined here will be installed to $XDG_STATE_HOME/devws/bin
+# and cached in $XDG_CACHE_HOME/devws/apps
+#
 # Uncomment and customize the tools you want to install
 
 # [ripgrep]

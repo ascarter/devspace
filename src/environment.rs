@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::path::PathBuf;
 
-use super::profile::get_environment_dir;
+use crate::workspace::Workspace;
 
 /// Shell type for environment generation
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -11,23 +11,21 @@ pub enum Shell {
     Fish,
 }
 
-/// Shell environment configuration for a profile
+/// Shell environment configuration
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ShellEnvironment {
+pub struct Environment {
     pub bin_path: PathBuf,
     pub man_path: PathBuf,
     pub completions_path: PathBuf,
 }
 
-impl ShellEnvironment {
-    /// Create a new shell environment for the given profile
-    pub fn new(profile_name: &str) -> Result<Self> {
-        let env_dir = get_environment_dir(profile_name)?;
-
+impl Environment {
+    /// Create a new shell environment from workspace
+    pub fn new_from_workspace(workspace: &Workspace, _shell: Shell) -> Result<Self> {
         Ok(Self {
-            bin_path: env_dir.join("bin"),
-            man_path: env_dir.join("share/man"),
-            completions_path: env_dir.join("share/zsh/site-functions"),
+            bin_path: workspace.bin_dir(),
+            man_path: workspace.share_dir().join("man"),
+            completions_path: workspace.share_dir().join("zsh/site-functions"),
         })
     }
 
@@ -70,11 +68,25 @@ impl ShellEnvironment {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_shell_environment_new() {
-        let env = ShellEnvironment::new("test-profile").unwrap();
+    use crate::workspace::Workspace;
+    use serial_test::serial;
+    use std::env;
+    use tempfile::TempDir;
 
-        assert!(env.bin_path.to_string_lossy().contains("test-profile"));
+    fn setup_test_env() -> TempDir {
+        let temp = TempDir::new().unwrap();
+        env::set_var("XDG_CONFIG_HOME", temp.path());
+        env::set_var("XDG_STATE_HOME", temp.path().join("state"));
+        temp
+    }
+
+    #[test]
+    #[serial]
+    fn test_shell_environment_new() {
+        let _temp = setup_test_env();
+        let workspace = Workspace::new().unwrap();
+        let env = Environment::new_from_workspace(&workspace, Shell::Zsh).unwrap();
+
         assert!(env.bin_path.to_string_lossy().ends_with("/bin"));
         assert!(env.man_path.to_string_lossy().ends_with("/share/man"));
         assert!(env
@@ -84,8 +96,11 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_shell_environment_format_zsh() {
-        let env = ShellEnvironment::new("default").unwrap();
+        let _temp = setup_test_env();
+        let workspace = Workspace::new().unwrap();
+        let env = Environment::new_from_workspace(&workspace, Shell::Zsh).unwrap();
         let output = env.format_for_shell(Shell::Zsh);
 
         assert!(output.contains("export PATH="));
@@ -97,8 +112,11 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_shell_environment_format_bash() {
-        let env = ShellEnvironment::new("default").unwrap();
+        let _temp = setup_test_env();
+        let workspace = Workspace::new().unwrap();
+        let env = Environment::new_from_workspace(&workspace, Shell::Bash).unwrap();
         let output = env.format_for_shell(Shell::Bash);
 
         assert!(output.contains("export PATH="));
@@ -109,8 +127,11 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_shell_environment_format_fish() {
-        let env = ShellEnvironment::new("default").unwrap();
+        let _temp = setup_test_env();
+        let workspace = Workspace::new().unwrap();
+        let env = Environment::new_from_workspace(&workspace, Shell::Fish).unwrap();
         let output = env.format_for_shell(Shell::Fish);
 
         assert!(output.contains("set -gx PATH"));

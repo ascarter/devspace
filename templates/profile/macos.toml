@@ -1,6 +1,7 @@
 # macOS-specific applications
 #
-# These will only be installed on macOS systems
+# These will only be installed on macOS systems.
+# Applications will be installed to /Applications
 
 # [ghostty]
 # installer = "dmg"
