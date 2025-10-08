@@ -268,6 +268,33 @@ trait Backend {
 
 ## Development Guidelines
 
+### Pre-Commit Rules
+
+**IMPORTANT**: Before every commit, you MUST:
+
+1. **Review all documentation** - Check README.md, ASSISTANT.md, docs/architecture.md
+   - Ensure they accurately reflect the current code state
+   - Update any outdated references, examples, or architecture descriptions
+   - Verify command examples match current CLI
+
+2. **Review all code comments** - Check inline comments, doc comments, TODOs
+   - Update comments that reference old code patterns or names
+   - Ensure TODOs are still relevant and accurate
+   - Verify doc comments match actual function signatures
+
+3. **Search for stale references** - Use grep/search to find:
+   - Old project names or terminology
+   - Outdated path references
+   - Removed features still mentioned in comments
+   - Changed command names or flags
+
+4. **Run all tests** - Ensure nothing breaks
+   - Unit tests
+   - Integration tests
+   - Doc tests
+
+**Rationale**: Documentation and comments rot quickly. Regular, systematic review prevents the codebase from becoming confusing or misleading. This is especially critical after refactoring, renaming, or architectural changes.
+
 ### Code Style
 
 - **Rust 2021 edition**: Use modern Rust idioms
