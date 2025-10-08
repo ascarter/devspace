@@ -128,7 +128,7 @@ mod tests {
     #[test]
     fn test_lockfile_save_load() {
         let temp = TempDir::new().unwrap();
-        let lockfile_path = temp.path().join("devws.lock");
+        let lockfile_path = temp.path().join("dws.lock");
 
         let mut lockfile = Lockfile::new();
         lockfile.add_config_symlink(

@@ -7,7 +7,7 @@
 #   - Directory: manifests/
 #   - Comments: Lines starting with #
 #
-# Note: .git, .DS_Store, and .devignore are always ignored (built-in)
+# Note: .git, .DS_Store, and .dwsignore are always ignored (built-in)
 
 # dws-specific directories (not config files)
 manifests/

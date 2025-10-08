@@ -1,12 +1,12 @@
-# AI Assistant Context for Developer Workspace (devws)
+# AI Assistant Context for Developer Workspace (dws)
 
-This document provides context for AI coding assistants (like Claude Code) working on the devws project.
+This document provides context for AI coding assistants (like Claude Code) working on the dws project.
 
 ## Project Overview
 
-**devws** is a lightweight, portable development environment bootstrapper. It manages dotfiles and development tools through declarative manifests, optimized for interactive development on laptops and workstations.
+**dws** is a lightweight, portable development environment bootstrapper. It manages dotfiles and development tools through declarative manifests, optimized for interactive development on laptops and workstations.
 
-**Repository**: https://github.com/ascarter/devws
+**Repository**: https://github.com/ascarter/dws
 **License**: MIT
 **Language**: Rust (2021 edition)
 
@@ -21,7 +21,7 @@ This document provides context for AI coding assistants (like Claude Code) worki
 5. **Version controlled**: Dotfiles + manifests in GitHub
 6. **Zero impact**: Symlinks in standard locations, no PATH hacks
 
-### What devws Does
+### What dws Does
 
 - **Manages dotfiles**: Symlinks zsh/git/editor configs from versioned profile
 - **Installs dev tools**: CLI tools, language toolchains (rustup/uv/fnm), native apps
@@ -29,7 +29,7 @@ This document provides context for AI coding assistants (like Claude Code) worki
 - **Keeps tools updated**: Respects version pins, shows available updates
 - **Self-contained**: All state in XDG dirs, single command to uninstall
 
-### What devws Does NOT Do
+### What dws Does NOT Do
 
 - ❌ Runtime environment switching (not direnv/mise)
 - ❌ Version management (use rustup/uv/fnm for that)
@@ -96,7 +96,7 @@ The shell-based prototype demonstrates all core functionality:
 
 **Type Hierarchy**:
 ```
-Workspace                    // Root context (~/.config/devws/)
+Workspace                    // Root context (~/.config/dws/)
   └─ Profile                 // Active or named profile
        ├─ Config             // Config file management (symlinked dotfiles)
        ├─ Environment        // Shell environment for this profile
@@ -122,7 +122,7 @@ println!("{}", env.format());
 ### Module Structure
 
 ```
-devws/
+dws/
 ├── src/
 │   ├── main.rs              # Entry point
 │   ├── cli.rs               # Clap CLI definitions
@@ -161,8 +161,8 @@ devws/
 ```rust
 // Workspace - root entry point
 pub struct Workspace {
-    config_dir: PathBuf,  // ~/.config/devws
-    state_dir: PathBuf,   // ~/.local/state/devws
+    config_dir: PathBuf,  // ~/.config/dws
+    state_dir: PathBuf,   // ~/.local/state/dws
 }
 
 impl Workspace {
@@ -422,34 +422,34 @@ remote = "flathub"
 
 ### Bootstrap
 ```bash
-devws init [shell] [url|user/repo] [--name <profile>]
-devws clone <url|user/repo> [--name <profile>]
+dws init [shell] [url|user/repo] [--name <profile>]
+dws clone <url|user/repo> [--name <profile>]
 ```
 
 ### Profile Management
 ```bash
-devws use <profile>         # Switch profile
-devws list                  # List profiles
+dws use <profile>         # Switch profile
+dws list                  # List profiles
 ```
 
 ### Daily Operations
 ```bash
-devws sync                  # Pull + install + respect pins
-devws update [tool]         # Update tools (respect pins)
-devws status                # Show status
+dws sync                  # Pull + install + respect pins
+dws update [tool]         # Update tools (respect pins)
+dws status                # Show status
 ```
 
 ### Maintenance
 ```bash
-devws doctor                # Health check + repair
-devws self                  # Show info
-devws self update           # Update devws
-devws self uninstall        # Remove all
+dws doctor                # Health check + repair
+dws self                  # Show info
+dws self update           # Update dws
+dws self uninstall        # Remove all
 ```
 
 ### Environment (Shell Integration)
 ```bash
-devws env [profile]         # Output env setup
+dws env [profile]         # Output env setup
 ```
 
 ## Common Tasks

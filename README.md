@@ -1,35 +1,35 @@
-# devws
+# dws
 
-> Lightweight, portable development environment bootstrapper
+> Developer Workspace - Lightweight, portable development environment manager
 
-**devws (Developer Workspace)** manages your dotfiles and development tools through declarative manifests. Bootstrap new machines, sync configurations, and maintain your dev environment with a single portable binary.
+**dws (Developer Workspace)** manages your dotfiles and development tools through declarative manifests. Bootstrap new machines, sync configurations, and maintain your dev environment with a single portable binary.
 
 ## Status
 
-🚧 **Early Development** - CLI structure complete, implementation in progress.
+🚧 **Early Development** - Core architecture complete, implementation in progress.
 
-## What is devws?
+## What is dws?
 
-A personal dev environment bootstrapper optimized for interactive development:
+A personal dev environment manager optimized for interactive development:
 
 - **Quick bootstrap**: Single binary → full dev environment
 - **Version controlled**: Dotfiles + tool manifests in GitHub
 - **XDG compliant**: Self-contained, easy to remove
 - **Native tools**: Use rustup/uv/fnm directly, no shims
-- **Profile-based**: Switch between work/personal/project configs
+- **Single workspace**: One environment per machine/container
 - **Lightweight**: No heavy package managers or runtime overhead
 
 ## Quick Start
 
 **Installation** (coming soon):
 ```bash
-curl -fsSL https://devws.dev/install.sh | sh
+curl -fsSL https://dws.ascarter.dev/install.sh | sh
 ```
 
 **Bootstrap new machine**:
 ```bash
-# Clone your profile and setup shell integration
-devws init zsh username/dotfiles
+# Clone your dotfiles and setup shell integration
+dws init username/dotfiles
 
 # Reload shell
 exec $SHELL
@@ -39,55 +39,41 @@ exec $SHELL
 
 **Or start from scratch**:
 ```bash
-# Create template profile and setup shell
-devws init zsh --name myconfig
+# Create template workspace and setup shell
+dws init
 
-# Edit your profile
-cd ~/.config/devws/profiles/myconfig
+# Edit your workspace
+cd ~/.config/dws
 
 # Publish to GitHub
-gh repo create myconfig --public --source=. --push
+gh repo create dotfiles --public --source=. --push
 ```
 
 ## Daily Usage
 
 ```bash
-# Pull latest profile changes and install new tools
-devws sync
+# Pull latest changes and reinstall
+dws sync
 
 # Check for tool updates (respects version pins)
-devws update
+dws update
 
 # Show current status
-devws status
+dws status
 
-# Check environment health
-devws doctor
+# Clean up unused cache and orphaned symlinks
+dws cleanup
 ```
 
-## Profile Management
-
-```bash
-# Clone a new profile
-devws clone username/work-dotfiles --name work
-
-# Switch profiles
-devws use work
-exec $SHELL
-
-# List all profiles
-devws list
-```
-
-## Profile Structure
+## Workspace Structure
 
 ```
-~/.config/devws/profiles/default/
-├── config/                    # Dotfiles (symlinked to ~)
+~/.config/dws/                 # Your dotfiles repo (version controlled)
+├── config/                    # XDG config files → symlinked to ~/.config
 │   ├── zsh/
 │   │   └── .zshrc
-│   ├── git/
-│   │   └── .gitconfig
+│   ├── nvim/
+│   │   └── init.lua
 │   └── ...
 ├── manifests/                 # Tool definitions
 │   ├── cli.toml              # Cross-platform tools
@@ -116,33 +102,33 @@ url = "https://astral.sh/uv/install.sh"
 
 ## How It Works
 
-1. **Shell integration**: `devws init` adds one line to `.zshenv`:
+1. **Shell integration**: `dws init` adds one line to `.zshenv`:
    ```bash
-   eval "$(devws env)"
+   eval "$(dws env)"
    ```
 
-2. **Environment setup**: `devws env` outputs:
+2. **Environment setup**: `dws env` outputs:
    ```bash
-   export PATH="$HOME/.local/state/devws/environments/default/bin:$PATH"
-   export MANPATH="$HOME/.local/state/devws/environments/default/share/man:$MANPATH"
-   fpath=($HOME/.local/state/devws/environments/default/share/zsh/site-functions $fpath)
+   export PATH="$HOME/.local/state/dws/bin:$PATH"
+   export MANPATH="$HOME/.local/state/dws/share/man:$MANPATH"
+   fpath=($HOME/.local/state/dws/share/zsh/site-functions $fpath)
    ```
 
-3. **Tool installation**: Tools cached in `~/.cache/devws/`, symlinked per-profile
+3. **Tool installation**: Tools cached in `~/.cache/dws/`, symlinked to state
 
-4. **Profile switching**: Atomically updates symlinks and config
+4. **Lockfile tracking**: `~/.local/state/dws/dws.lock` tracks installed symlinks
 
 ## Self-Management
 
 ```bash
-# Show version, disk usage, profile count
-devws self
+# Show version, disk usage
+dws self info
 
-# Update devws itself
-devws self update
+# Update dws itself
+dws self update
 
 # Remove everything (with confirmation)
-devws self uninstall
+dws self uninstall
 ```
 
 ## Development

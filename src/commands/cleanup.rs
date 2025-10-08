@@ -9,6 +9,6 @@ pub fn execute(_workspace: &Workspace) -> Result<()> {
     // 4. Remove cached versions not in lockfile
     // 5. Report what was cleaned up
 
-    println!("TODO: devws cleanup - not yet implemented");
+    println!("TODO: dws cleanup - not yet implemented");
     Ok(())
 }

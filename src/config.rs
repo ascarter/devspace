@@ -8,13 +8,13 @@ use std::path::{Path, PathBuf};
 const BUILTIN_IGNORES: &[&str] = &[
     ".git",
     ".DS_Store",
-    ".devwsignore", // Don't symlink the ignore file itself
+    ".dwsignore", // Don't symlink the ignore file itself
 ];
 
 /// Represents a dotfile configuration entry that should be installed
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigEntry {
-    /// Source path in workspace (e.g., $XDG_CONFIG_HOME/devws/config/zsh/.zshrc)
+    /// Source path in workspace (e.g., $XDG_CONFIG_HOME/dws/config/zsh/.zshrc)
     pub source: PathBuf,
     /// Target path in XDG_CONFIG_HOME (e.g., $XDG_CONFIG_HOME/zsh/.zshrc)
     pub target: PathBuf,
@@ -101,7 +101,7 @@ pub struct Config {
     config_dir: PathBuf,
     /// Target directory ($XDG_CONFIG_HOME, default: ~/.config)
     target_dir: PathBuf,
-    /// Ignore patterns loaded from .devwsignore
+    /// Ignore patterns loaded from .dwsignore
     ignore_patterns: Vec<String>,
 }
 
@@ -116,9 +116,9 @@ impl Config {
         }
     }
 
-    /// Load ignore patterns from .devwsignore file
+    /// Load ignore patterns from .dwsignore file
     fn load_ignore_patterns(config_dir: &Path) -> Vec<String> {
-        let ignore_file = config_dir.join(".devwsignore");
+        let ignore_file = config_dir.join(".dwsignore");
 
         if !ignore_file.exists() {
             return Vec::new();
@@ -272,7 +272,7 @@ mod tests {
     }
 
     #[test]
-    fn test_profile_configuration_respects_devwsignore() {
+    fn test_profile_configuration_respects_dwsignore() {
         let temp = TempDir::new().unwrap();
         let profile_config_dir = temp.path().join("profile/config");
         let xdg_config_home = temp.path().join("xdg_config");
@@ -280,8 +280,8 @@ mod tests {
         fs::create_dir_all(&profile_config_dir).unwrap();
         fs::create_dir_all(&xdg_config_home).unwrap();
 
-        // Create .devwsignore to ignore .gitkeep
-        fs::write(profile_config_dir.join(".devwsignore"), ".gitkeep\n").unwrap();
+        // Create .dwsignore to ignore .gitkeep
+        fs::write(profile_config_dir.join(".dwsignore"), ".gitkeep\n").unwrap();
 
         fs::write(profile_config_dir.join(".gitkeep"), "").unwrap();
         fs::create_dir_all(profile_config_dir.join("zsh")).unwrap();

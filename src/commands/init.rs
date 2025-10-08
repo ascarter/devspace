@@ -19,7 +19,7 @@ pub fn execute(
     // TODO: Implement init command based on use cases:
     //
     // Case 1: New machine, no workspace
-    //   -> Create template at $XDG_CONFIG_HOME/devws
+    //   -> Create template at $XDG_CONFIG_HOME/dws
     //   -> workspace.install()
     //   -> Setup shell integration for detected_shell
     //
@@ -36,7 +36,7 @@ pub fn execute(
     //   -> Setup shell integration for detected_shell
     //
     // Case 4: Repository provided, no workspace
-    //   -> Clone repository to $XDG_CONFIG_HOME/devws
+    //   -> Clone repository to $XDG_CONFIG_HOME/dws
     //   -> workspace.install()
     //   -> Setup shell integration for detected_shell
     //
@@ -44,7 +44,7 @@ pub fn execute(
     //   -> If same repo/no repo: Just update shell integration for detected_shell
     //   -> Can run multiple times for different shells
 
-    println!("TODO: devws init - shell auto-detected as: {}", detected_shell);
+    println!("TODO: dws init - shell auto-detected as: {}", detected_shell);
     Ok(())
 }
 

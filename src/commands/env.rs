@@ -4,7 +4,7 @@ use anyhow::Result;
 pub fn execute(workspace: &Workspace, shell: String) -> Result<()> {
     // Check if workspace exists
     if !workspace.exists() {
-        anyhow::bail!("Workspace not initialized. Run: devws init <shell> [repo]");
+        anyhow::bail!("Workspace not initialized. Run: dws init [repo]");
     }
 
     // Parse shell type

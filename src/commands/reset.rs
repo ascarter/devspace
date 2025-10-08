@@ -9,6 +9,6 @@ pub fn execute(_workspace: &Workspace, _force: bool) -> Result<()> {
     // 4. git clean -fdx or git reset --hard + git pull
     // 5. workspace.install()
 
-    println!("TODO: devws reset - not yet implemented");
+    println!("TODO: dws reset - not yet implemented");
     Ok(())
 }
