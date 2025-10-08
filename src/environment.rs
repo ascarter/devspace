@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::path::PathBuf;
 
-use crate::workspace::Workspace;
+use crate::workspace::{Workspace, WorkspacePath};
 
 /// Shell type for environment generation
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,10 +22,11 @@ pub struct Environment {
 impl Environment {
     /// Create a new shell environment from workspace
     pub fn new_from_workspace(workspace: &Workspace, _shell: Shell) -> Result<Self> {
+        let share_path = workspace.path(WorkspacePath::Share);
         Ok(Self {
-            bin_path: workspace.bin_dir(),
-            man_path: workspace.share_dir().join("man"),
-            completions_path: workspace.share_dir().join("zsh/site-functions"),
+            bin_path: workspace.path(WorkspacePath::Bin),
+            man_path: share_path.join("man"),
+            completions_path: share_path.join("zsh/site-functions"),
         })
     }
 

@@ -12,4 +12,4 @@ mod workspace;
 pub use config::{Config, ConfigEntry};
 pub use environment::{Environment, Shell};
 pub use lockfile::Lockfile;
-pub use workspace::Workspace;
+pub use workspace::{Workspace, WorkspacePath};

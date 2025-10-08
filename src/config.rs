@@ -272,7 +272,7 @@ mod tests {
     }
 
     #[test]
-    fn test_profile_configuration_respects_dwsignore() {
+    fn test_profile_configuration_with_dwsignore() {
         let temp = TempDir::new().unwrap();
         let profile_config_dir = temp.path().join("profile/config");
         let xdg_config_home = temp.path().join("xdg_config");
@@ -350,7 +350,7 @@ mod tests {
     }
 
     #[test]
-    fn test_config_entry_should_ignore() {
+    fn test_config_entry_with_user_patterns() {
         let patterns = vec!["README.md".to_string(), "*.log".to_string()];
 
         let readme = ConfigEntry::new(
@@ -373,7 +373,7 @@ mod tests {
     }
 
     #[test]
-    fn test_config_entry_should_ignore_builtin() {
+    fn test_config_entry_with_builtin_patterns() {
         let patterns = vec![];
 
         let git = ConfigEntry::new(PathBuf::from("/config/.git"), PathBuf::from("/home/.git"));

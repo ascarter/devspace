@@ -19,8 +19,7 @@ pub fn execute(cli: Cli) -> Result<()> {
         Commands::Init {
             repository,
             shell,
-            force,
-        } => init::execute(&workspace, repository, shell, force),
+        } => init::execute(&workspace, repository, shell),
 
         Commands::Sync => sync::execute(&workspace),
 

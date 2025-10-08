@@ -305,12 +305,104 @@ trait Backend {
 - **Testing**: Comprehensive unit and integration tests
 - **Documentation**: rustdoc comments for all public APIs
 
+**Comments:**
+- **Only write valuable comments** - Comments should explain WHY, not WHAT
+- **Never restate what the code obviously does** - Bad: `// Create directory`, Good: `// Ensure parent exists to avoid ENOENT`
+- **Explain non-obvious decisions** - Why you chose an approach, edge cases handled, assumptions made
+- **No comments is better than pointless comments** - If the code is clear, don't add commentary
+- Examples:
+  ```rust
+  // BAD - restates the obvious
+  // Auto-detect shell if not provided
+  let shell = match shell {
+      Some(s) => s,
+      None => detect_shell()?,
+  };
+
+  // GOOD - explains why
+  // Normalize URLs for comparison (handle .git suffix differences)
+  let expected_normalized = expected_url.trim_end_matches(".git");
+
+  // BEST - code is self-documenting, no comment needed
+  let shell = match shell {
+      Some(s) => s,
+      None => detect_shell()?,
+  };
+  ```
+
 ### Testing Strategy
 
-1. **Unit tests**: Test individual functions and modules
-2. **Integration tests**: Test command execution end-to-end
-3. **Example tests**: Examples that also serve as documentation
-4. **Platform tests**: Conditional compilation for platform-specific code
+**Two types of tests in Rust:**
+
+1. **Unit tests** (`#[cfg(test)] mod tests` in source files)
+   - Test individual functions and methods
+   - Have access to private functions
+   - Live in the same file as the code they test
+   - Example: `src/commands/init.rs` tests shell detection logic
+
+2. **Integration tests** (`tests/` directory)
+   - Test the public API as a black box
+   - Each file is compiled as a separate test binary
+   - Test real command execution (e.g., using `assert_cmd`)
+   - Example: `tests/cli_test.rs` tests the actual CLI binary end-to-end
+
+**Test Naming Conventions:**
+
+Follow Rust idioms - describe the scenario being tested, not the expected outcome:
+
+```rust
+// Good - describes scenario
+#[test]
+fn test_detect_shell_when_unset() { ... }
+
+#[test]
+fn test_config_with_multiple_entries() { ... }
+
+// Less idiomatic - describes outcome
+#[test]
+fn test_detect_shell_fails() { ... }
+
+#[test]
+fn test_config_returns_three() { ... }
+```
+
+**Parameterized Tests with rstest:**
+
+Use `rstest` for testing multiple cases (more idiomatic than loops):
+
+```rust
+use rstest::rstest;
+
+#[rstest]
+#[case("/bin/zsh", "zsh")]
+#[case("/usr/bin/bash", "bash")]
+#[case("/bin/fish", "fish")]
+fn test_detect_shell(#[case] shell_path: &str, #[case] expected: &str) {
+    env::set_var("SHELL", shell_path);
+    assert_eq!(detect_shell().unwrap(), expected);
+}
+```
+
+Benefits:
+- Each case runs as a separate test (shows up individually in output)
+- If one case fails, others still run
+- Clear test output showing which specific case failed
+
+**Fixtures with rstest:**
+
+```rust
+#[fixture]
+fn temp_workspace() -> TempDir {
+    TempDir::new().unwrap()
+}
+
+#[rstest]
+fn test_with_fixture(temp_workspace: TempDir) {
+    // Use fixture
+}
+```
+
+**Platform-Specific Tests:**
 
 ```rust
 #[cfg(test)]
@@ -318,19 +410,44 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_manifest() {
-        // ...
+    fn test_cross_platform() {
+        // Runs on all platforms
     }
 
-    #[tokio::test]
-    async fn test_install_app() {
-        // ...
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn test_macos_only() {
+        // macOS-specific test
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_linux_only() {
+        // Linux-specific test
     }
 }
+```
 
-#[cfg(target_os = "macos")]
-mod macos_tests {
-    // macOS-specific tests
+**Async Tests:**
+
+```rust
+#[tokio::test]
+async fn test_async_operation() {
+    // ...
+}
+```
+
+**Serial Tests (when tests modify shared state):**
+
+```rust
+use serial_test::serial;
+
+#[test]
+#[serial]
+fn test_modifies_env() {
+    env::set_var("FOO", "bar");
+    // ...
+    env::remove_var("FOO");
 }
 ```
 
@@ -361,27 +478,26 @@ mod macos_tests {
 - [x] Verify `--help` output
 - [x] CI/CD setup (GitHub Actions)
 
-### Phase 2: Core Infrastructure (Next)
-- [ ] TOML manifest parsing
-- [ ] Manifest type definitions
-- [ ] Platform detection (macOS, Linux, BSD)
-- [ ] Error types
-- [ ] XDG directory helpers
-- [ ] Logging setup
-- [ ] Tests for core functionality
+### Phase 2: Core Infrastructure ✅
+- [x] XDG directory helpers (Workspace type)
+- [x] Config management (symlink discovery, installation)
+- [x] Lockfile tracking (state management)
+- [x] Environment generation (shell integration)
+- [x] Init command (template creation, git clone, shell setup)
+- [x] Tests for core functionality (27 passing unit tests)
 
-### Phase 3: Feature Implementation
+### Phase 3: Feature Implementation (Next)
 Priority order:
-1. Profile loading (local directory)
-2. Symlink management
-3. UBI backend integration
-4. App status/list commands
-5. Config management
-6. DMG backend (macOS)
-7. Flatpak backend (Linux)
-8. Curl backend
-9. Profile cloning (GitHub)
-10. Advanced features (parallel installs, doctor, version checking)
+1. **TOML manifest parsing** - Parse tool manifests from workspace
+2. **Platform detection** - Detect macOS, Linux, BSD for conditional manifests
+3. **UBI backend integration** - Install tools from GitHub releases
+4. **Status command** - Show installed tools and versions
+5. **Sync command** - Pull workspace, install/update tools
+6. **Update command** - Update tools (respect pins)
+7. **DMG backend** (macOS) - Install macOS apps
+8. **Flatpak backend** (Linux) - Install Linux apps
+9. **Curl backend** - Custom install scripts
+10. **Advanced features** - Parallel installs, doctor, version checking
 
 ### Phase 4: Release
 - [x] Cross-compilation (macOS, Linux x86_64/ARM64)

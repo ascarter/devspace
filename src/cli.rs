@@ -18,13 +18,10 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Initialize workspace (create template or use existing/cloned repo)
+    /// Initialize workspace and shell integration
     ///
-    /// Use cases:
-    /// - New machine, no workspace: Creates template at $XDG_CONFIG_HOME/dws
-    /// - Workspace exists (manually cloned): Uses existing workspace
-    /// - With <repository>: Clones repository (warns if workspace exists)
-    /// - Run multiple times for different shells (updates shell integration only)
+    /// Creates workspace from template or clones from repository.
+    /// If workspace exists, verifies it and updates shell integration.
     Init {
         /// Git repository URL or GitHub shorthand (user/repo) to clone
         #[arg(value_name = "REPOSITORY")]
@@ -33,10 +30,6 @@ pub enum Commands {
         /// Shell type (auto-detects from $SHELL if not specified)
         #[arg(short, long, value_name = "SHELL")]
         shell: Option<String>,
-
-        /// Force overwrite existing workspace
-        #[arg(short, long)]
-        force: bool,
     },
 
     /// Sync workspace (git pull + reinstall configs/tools)
