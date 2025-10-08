@@ -1,24 +1,11 @@
-# CLAUDE.md
+# Claude Agent Guide
 
-This project uses standard Rust tooling and documentation.
+Welcome! Use [`AGENTS.md`](AGENTS.md) as the authoritative checklist for working on this repository. It links to `README.md`, `SETUP.md`, `ASSISTANT.md`, and `docs/architecture.md` for deeper context.
 
-## Primary References
-- [`README.md`](README.md): overview, goals, and build instructions  
-- [`CONTRIBUTING.md`](CONTRIBUTING.md): contribution workflow and coding standards  
-- [`ARCHITECTURE.md`](ARCHITECTURE.md): module and crate structure  
-- [`STYLEGUIDE.md`](STYLEGUIDE.md): formatting, naming, and safety conventions  
-- [`AGENTS.md`](AGENTS.md): AI Agent instructions
+Minimum workflow for Claude Code:
+1. Skim `AGENTS.md` → follow structure, commands, and style rules.
+2. Read the task-specific files plus any references mentioned in `ASSISTANT.md`.
+3. Run `cargo fmt` and `cargo clippy --all-targets --all-features` before proposing changes.
+4. Add or update tests as directed in `AGENTS.md`.
 
-## AI Agent Context
-- Language: Rust (edition 2024)
-- Tooling: Cargo, rust-analyzer
-- Preferred completion focus:
-  - Show working, idiomatic code
-  - Use `cargo fmt` / `clippy` compliance
-  - Avoid unsafe unless explicitly allowed
-- Key context files: `Cargo.toml`, `src/main.rs`, `src/lib.rs`
-
----
-
-_This file is intended for coding assistants (Claude, Copilot, Codex) to locate relevant project documentation._
-- Always run clippy/format before you commit
+If something in the docs appears stale, update `AGENTS.md` first so every agent stays in sync. Ping a human for conflicting requirements or destructive actions. Good luck!

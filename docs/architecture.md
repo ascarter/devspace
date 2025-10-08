@@ -34,14 +34,14 @@
    - Config files symlink to `$XDG_CONFIG_HOME` (default: `~/.config`)
    - No support for dotfiles in home directory root
    - Structure mirrors XDG: `dws/config/zsh/.zshrc` → `~/.config/zsh/.zshrc`
-2. **Single workspace model**: `~/.config/dev` IS your dotfiles repo
+2. **Single workspace model**: `~/.config/dws` IS your dotfiles repo
    - No "profiles" - one workspace per machine/container
    - Version controlled (git repo)
    - Different environments = different machines/containers
 3. **Separation of concerns**:
-   - `~/.config/dev`: Source of truth (version controlled)
-   - `~/.local/state/dev`: Execution state (local, not in git)
-   - `~/.cache/dev`: Downloaded binaries (can be cleared)
+   - `~/.config/dws`: Source of truth (version controlled)
+   - `~/.local/state/dws`: Execution state (local, not in git)
+   - `~/.cache/dws`: Downloaded binaries (can be cleared)
 4. **Lockfile-based state tracking**: Similar to Cargo.lock
    - `dws.lock` in state directory tracks installed symlinks
    - Records exact paths, versions, and timestamps
@@ -71,7 +71,7 @@ dws cleanup                      # Remove unused cache, orphaned symlinks
 
 # Self-management
 dws self info                    # Show version, disk usage
-dws self update                  # Update dev binary
+dws self update                  # Update dws binary
 dws self uninstall               # Remove everything (with confirmation)
 
 # Environment (called by shell)
@@ -87,9 +87,9 @@ eval "$(dws env)"
 
 `dws env` outputs environment setup for the shell:
 ```bash
-export PATH="$HOME/.local/state/dev/bin:$PATH"
-export MANPATH="$HOME/.local/state/dev/share/man:$MANPATH"
-fpath=($HOME/.local/state/dev/share/zsh/site-functions $fpath)
+export PATH="$HOME/.local/state/dws/bin:$PATH"
+export MANPATH="$HOME/.local/state/dws/share/man:$MANPATH"
+fpath=($HOME/.local/state/dws/share/zsh/site-functions $fpath)
 ```
 
 ## Lockfile Format
@@ -104,31 +104,31 @@ version = 1
 installed_at = "2025-10-07T12:34:56.789Z"
 
 [[config_symlinks]]
-source = "/Users/user/.config/dev/config/zsh/.zshrc"
+source = "/Users/user/.config/dws/config/zsh/.zshrc"
 target = "/Users/user/.config/zsh/.zshrc"
 
 [[config_symlinks]]
-source = "/Users/user/.config/dev/config/nvim/init.lua"
+source = "/Users/user/.config/dws/config/nvim/init.lua"
 target = "/Users/user/.config/nvim/init.lua"
 
 [[tool_symlinks]]
 name = "rg"
 version = "14.0.0"
-source = "/Users/user/.cache/dev/apps/ripgrep/14.0.0/rg"
-target = "/Users/user/.local/state/dev/bin/rg"
+source = "/Users/user/.cache/dws/apps/ripgrep/14.0.0/rg"
+target = "/Users/user/.local/state/dws/bin/rg"
 
 [[tool_symlinks]]
 name = "fd"
 version = "9.0.0"
-source = "/Users/user/.cache/dev/apps/fd/9.0.0/fd"
-target = "/Users/user/.local/state/dev/bin/fd"
+source = "/Users/user/.cache/dws/apps/fd/9.0.0/fd"
+target = "/Users/user/.local/state/dws/bin/fd"
 ```
 
 **Purpose:**
 - Tracks exactly what symlinks are installed for this workspace
 - Enables reliable cleanup and reinstall
 - Provides audit trail for `dws status` and `dws cleanup`
-- Detects drift (symlinks changed/removed outside dev)
+- Detects drift (symlinks changed/removed outside dws)
 - Generated/updated on `dws init`, `dws sync`, `dws update`
 
 ## Manifest Format
@@ -164,7 +164,7 @@ exec $SHELL
 
 ### Manually cloned workspace
 ```bash
-git clone git@github.com:ascarter/dotfiles.git ~/.config/dev
+git clone git@github.com:ascarter/dotfiles.git ~/.config/dws
 dws init  # Auto-detects shell
 exec $SHELL
 ```

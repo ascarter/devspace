@@ -217,15 +217,18 @@ impl Workspace {
     /// - Full URLs: normalized (removes trailing slashes, ensures .git suffix)
     /// - Other formats: passed through as-is
     fn canonical_url(repository: &str) -> String {
-        let url = if repository.contains("://") {
-            // Full URL - use as-is
-            repository.to_string()
-        } else if repository.contains('/') && !repository.contains('.') {
-            // GitHub shorthand: user/repo
-            format!("https://github.com/{}.git", repository)
+        let trimmed = repository.trim();
+
+        let url = if trimmed.contains("://") || trimmed.starts_with("git@") {
+            // Full URL (https/ssh/etc.) - use as-is
+            trimmed.to_string()
+        } else if trimmed.split('/').count() == 2 {
+            // GitHub shorthand: user/repo (allow dots in repo name)
+            let repo = trimmed.trim_end_matches(".git");
+            format!("https://github.com/{}.git", repo)
         } else {
             // Other format - pass through
-            repository.to_string()
+            trimmed.to_string()
         };
 
         // Normalize: remove trailing slash, ensure .git suffix for https/http
@@ -377,6 +380,27 @@ impl Workspace {
 
     /// Install the workspace (symlink configs, install tools)
     pub fn install(&self) -> Result<()> {
+        // Ensure state directories exist before installing assets
+        let bin_dir = self.path(WorkspacePath::Bin);
+        fs::create_dir_all(&bin_dir)
+            .with_context(|| format!("Failed to create bin directory {:?}", bin_dir))?;
+
+        let share_dir = self.path(WorkspacePath::Share);
+        fs::create_dir_all(&share_dir)
+            .with_context(|| format!("Failed to create share directory {:?}", share_dir))?;
+
+        let man_dir = share_dir.join("man");
+        fs::create_dir_all(&man_dir)
+            .with_context(|| format!("Failed to create man directory {:?}", man_dir))?;
+
+        let zsh_functions = share_dir.join("zsh").join("site-functions");
+        fs::create_dir_all(&zsh_functions).with_context(|| {
+            format!(
+                "Failed to create zsh site-functions directory {:?}",
+                zsh_functions
+            )
+        })?;
+
         // Load or create lockfile
         let lockfile_path = self.path(WorkspacePath::Lockfile);
         let mut lockfile = if lockfile_path.exists() {
@@ -457,6 +481,7 @@ mod tests {
         let temp = TempDir::new().unwrap();
         env::set_var("XDG_CONFIG_HOME", temp.path());
         env::set_var("XDG_STATE_HOME", temp.path().join("state"));
+        env::set_var("HOME", temp.path());
         temp
     }
 
@@ -511,6 +536,15 @@ mod tests {
 
         // Verify lockfile was created
         assert!(workspace.path(WorkspacePath::Lockfile).exists());
+        assert!(workspace.path(WorkspacePath::Bin).exists());
+        assert!(workspace
+            .path(WorkspacePath::Share)
+            .join("man")
+            .exists());
+        assert!(workspace
+            .path(WorkspacePath::Share)
+            .join("zsh/site-functions")
+            .exists());
 
         // Verify lockfile contents
         let lockfile = Lockfile::load(&workspace.path(WorkspacePath::Lockfile)).unwrap();
@@ -664,6 +698,8 @@ mod tests {
     #[rstest]
     #[case("user/repo", "https://github.com/user/repo.git")]
     #[case("octocat/Hello-World", "https://github.com/octocat/Hello-World.git")]
+    #[case("octocat/cli.tool", "https://github.com/octocat/cli.tool.git")]
+    #[case("someone/dot.repo.git", "https://github.com/someone/dot.repo.git")]
     #[case("https://github.com/user/repo", "https://github.com/user/repo.git")]
     #[case("https://github.com/user/repo.git", "https://github.com/user/repo.git")]
     #[case("https://github.com/user/repo/", "https://github.com/user/repo.git")]

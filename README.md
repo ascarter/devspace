@@ -152,6 +152,8 @@ cargo test
 cargo run -- --help
 ```
 
+See [AGENTS.md](AGENTS.md) for contributor guidelines and agent workflow notes.
+
 ## Architecture
 
 See [ASSISTANT.md](ASSISTANT.md) for AI assistant context and development guidelines.

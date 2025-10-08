@@ -119,152 +119,70 @@ println!("{}", env.format());
 4. Each module has comprehensive unit tests
 5. Public API surfaces types, not implementation details
 
-### Module Structure
+### Module Structure (Current)
 
 ```
 dws/
 ├── src/
-│   ├── main.rs              # Entry point
-│   ├── cli.rs               # Clap CLI definitions
-│   ├── lib.rs               # Public library interface
-│   ├── commands/            # Command implementations (thin layer)
-│   │   └── mod.rs           # Dispatch to workspace/profile methods
-│   │
-│   ├── config/              # Core domain types
-│   │   ├── mod.rs           # Re-exports public types
-│   │   ├── workspace.rs     # Workspace type (root context)
-│   │   ├── profile.rs       # Profile type and management
-│   │   ├── config.rs        # Config type (dotfiles/symlinks)
-│   │   └── environment.rs   # Environment type (shell env generation)
-│   │
-│   ├── manifest/            # Tool manifest types (future)
-│   │   ├── mod.rs
-│   │   └── parser.rs        # TOML manifest parsing
-│   │
-│   ├── backends/            # Tool installer backends (future)
-│   │   ├── mod.rs
-│   │   ├── ubi.rs           # UBI backend
-│   │   ├── dmg.rs           # DMG installer (macOS)
-│   │   ├── flatpak.rs       # Flatpak (Linux)
-│   │   └── curl.rs          # Curl-based installers
-│   │
-│   └── platform/            # Platform detection (future)
-│       └── mod.rs
-│
-├── tests/
-│   └── integration/         # Integration tests
-└── templates/               # Embedded profile templates
+│   ├── main.rs          # Binary entry point
+│   ├── lib.rs           # Public API exports
+│   ├── cli.rs           # Clap command definitions
+│   ├── commands/        # Subcommand implementations (init, sync, etc.)
+│   ├── config.rs        # Dotfile discovery and symlinking
+│   ├── environment.rs   # Shell environment emission
+│   ├── lockfile.rs      # Lockfile serialization (TBD wiring)
+│   └── workspace.rs     # Workspace orchestration and templates
+├── templates/           # Embedded workspace starter files
+├── tests/cli_test.rs    # CLI integration harness (ignored pending isolation)
+└── docs/architecture.md # Narrative design reference
 ```
 
-### Core Types
+### Core Types (Rust)
 
 ```rust
-// Workspace - root entry point
 pub struct Workspace {
-    config_dir: PathBuf,  // ~/.config/dws
-    state_dir: PathBuf,   // ~/.local/state/dws
+    workspace_dir: PathBuf, // ~/.config/dws
+    state_dir: PathBuf,     // ~/.local/state/dws
 }
 
-impl Workspace {
-    pub fn new() -> Result<Self>;
-    pub fn get_profile(&self, name: &str) -> Result<Profile>;
-    pub fn active_profile(&self) -> Result<Profile>;
-    pub fn list_profiles(&self) -> Result<Vec<Profile>>;
-    pub fn create_profile(&self, name: &str) -> Result<Profile>;
-}
-
-// Profile - represents a dev environment profile
-pub struct Profile {
-    name: String,
-    path: PathBuf,
-    workspace: Workspace,  // Reference to parent
-}
-
-impl Profile {
-    pub fn config(&self) -> Result<Config>;
-    pub fn environment(&self, shell: Shell) -> Result<Environment>;
-    pub fn activate(&self) -> Result<()>;
-    // Future: pub fn manifest(&self) -> Result<Manifest>;
-}
-
-// Config - manages dotfiles/config file symlinking
 pub struct Config {
     config_dir: PathBuf,
-    entries: Vec<ConfigEntry>,
+    target_dir: PathBuf,
     ignore_patterns: Vec<String>,
 }
 
-impl Config {
-    pub fn new(profile_path: &Path) -> Result<Self>;
-    pub fn discover_entries(&self, target_dir: &Path) -> Result<Vec<ConfigEntry>>;
-    pub fn install(&self, target_dir: &Path) -> Result<()>;
-    pub fn uninstall(&self, target_dir: &Path) -> Result<()>;
-}
-
-// ConfigEntry - a single config file to symlink
+#[derive(Clone)]
 pub struct ConfigEntry {
     pub source: PathBuf,
     pub target: PathBuf,
 }
 
-// Environment - shell environment for a profile
 pub struct Environment {
-    bin_path: PathBuf,
-    man_path: PathBuf,
-    completions_path: PathBuf,
+    pub bin_path: PathBuf,
+    pub man_path: PathBuf,
+    pub completions_path: PathBuf,
 }
 
-impl Environment {
-    pub fn new(profile: &Profile) -> Result<Self>;
-    pub fn format(&self, shell: Shell) -> String;
-}
-
-// Manifest types (future)
-struct AppManifest {
-    apps: HashMap<String, AppConfig>,
-}
-
-struct AppConfig {
-    installer: InstallerType,
-    project: Option<String>,      // For UBI
-    url: Option<String>,           // For DMG/Curl
-    bin: Vec<String>,              // Binaries to symlink
-    symlinks: Vec<String>,         // Supplementary files
-    // ... platform-specific fields
-}
-
-enum InstallerType {
-    Ubi,
-    Dmg,
-    Flatpak,
-    Curl,
-}
-
-// Profile types
-struct Profile {
-    name: String,
-    path: PathBuf,
-    config: ProfileConfig,
-}
-
-struct ProfileConfig {
-    shell: Option<String>,
-    manifests: Vec<PathBuf>,
-    // ... other settings
+pub struct Lockfile {
+    version: u32,
+    pub metadata: Metadata,
+    pub config_symlinks: Vec<SymlinkEntry>,
+    pub tool_symlinks: Vec<ToolEntry>,
 }
 ```
 
-### Installer Backend Trait
+`Workspace` is the façade used by CLI commands. It exposes helpers for initialization, template installation, and shell integration. `Config` discovers and installs symlinks from `workspace/config/` into `$XDG_CONFIG_HOME`. `Environment` renders `dws env` output so shells can source a deterministic PATH. `Lockfile` currently serializes state but still needs to be integrated with install/update flows.
 
-```rust
-#[async_trait]
-trait Backend {
-    async fn install(&self, app: &AppConfig) -> Result<()>;
-    async fn uninstall(&self, app: &AppConfig) -> Result<()>;
-    async fn status(&self, app: &AppConfig) -> Result<InstallStatus>;
-    async fn update(&self, app: &AppConfig) -> Result<()>;
-}
-```
+### Planned Extensions
+
+The roadmap introduces richer layering while keeping the current modules intact:
+
+- **Manifest parsing (`Manifest` module)**: strongly typed TOML manifests for tool installation.
+- **Installer backends**: async traits for UBI, DMG, Flatpak, and Curl implementations.
+- **Profiles / workspaces per context**: potential evolution if multi-profile support is reintroduced.
+- **Platform abstraction**: detect OS/architecture to select manifests and installers.
+
+When implementing these pieces, update `docs/architecture.md` with the final shape and extend `AGENTS.md` so all assistants share the same workflow guidance.
 
 ## Development Guidelines
 
@@ -299,7 +217,7 @@ trait Backend {
 
 - **Rust 2021 edition**: Use modern Rust idioms
 - **Error handling**: Use `anyhow::Result` for applications, `thiserror` for libraries
-- **Async**: Use `tokio` for async operations
+- **Async**: Keep workflows synchronous for now; add an async runtime (Tokio) when installer backends need it
 - **Logging**: Use `tracing` crate with structured logging
 - **CLI**: Use `clap` v4 with derive macros
 - **Testing**: Comprehensive unit and integration tests
@@ -428,15 +346,6 @@ mod tests {
 }
 ```
 
-**Async Tests:**
-
-```rust
-#[tokio::test]
-async fn test_async_operation() {
-    // ...
-}
-```
-
 **Serial Tests (when tests modify shared state):**
 
 ```rust
@@ -457,7 +366,6 @@ fn test_modifies_env() {
 - `clap` - CLI parsing
 - `serde` + `toml` - Config parsing
 - `anyhow` + `thiserror` - Error handling
-- `tokio` - Async runtime
 - `tracing` - Structured logging
 
 **Utilities**:
@@ -465,6 +373,7 @@ fn test_modifies_env() {
 - `git2` - Git operations (for profile cloning)
 
 **Future** (when implementing backends):
+- Async runtime (Tokio) once installers need concurrent downloads
 - `ubi` - As a library dependency
 - Platform-specific crates as needed
 
@@ -657,7 +566,6 @@ cargo test --test integration
 - **Shell implementation**: `/Users/acarter/.local/share/dev`
 - **UBI**: https://github.com/houseabsolute/ubi
 - **Clap**: https://docs.rs/clap/
-- **Tokio**: https://tokio.rs/
 - **Tracing**: https://docs.rs/tracing/
 - **XDG Base Directory**: https://specifications.freedesktop.org/basedir-spec/
 

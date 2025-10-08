@@ -97,5 +97,5 @@ jobs:
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: devws-${{ matrix.os }}
-        path: target/release/devws${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+        name: dws-${{ matrix.os }}
+        path: target/release/dws${{ matrix.os == 'windows-latest' && '.exe' || '' }}
