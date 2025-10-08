@@ -14,8 +14,12 @@ use std::env;
 fn detect_shell() -> Result<String> {
     env::var("SHELL")
         .ok()
-        .and_then(|s| s.split('/').last().map(String::from))
-        .ok_or_else(|| anyhow::anyhow!("SHELL environment variable not set. Please specify shell with --shell flag."))
+        .and_then(|s| s.split('/').next_back().map(String::from))
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "SHELL environment variable not set. Please specify shell with --shell flag."
+            )
+        })
 }
 
 pub fn execute(
@@ -74,6 +78,9 @@ mod tests {
         env::remove_var("SHELL");
         let result = detect_shell();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("SHELL environment variable not set"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("SHELL environment variable not set"));
     }
 }

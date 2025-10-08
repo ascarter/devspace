@@ -21,3 +21,4 @@ This project uses standard Rust tooling and documentation.
 ---
 
 _This file is intended for coding assistants (Claude, Copilot, Codex) to locate relevant project documentation._
+- Always run clippy/format before you commit

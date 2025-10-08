@@ -71,7 +71,9 @@ fn test_init_without_shell_env_fails() {
         .arg("init")
         .assert()
         .failure()
-        .stderr(predicate::str::contains("SHELL environment variable not set"));
+        .stderr(predicate::str::contains(
+            "SHELL environment variable not set",
+        ));
 }
 
 #[test]

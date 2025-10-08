@@ -168,8 +168,7 @@ impl Workspace {
         }
 
         println!("Installing workspace...");
-        self.install()
-            .context("Failed to install workspace")?;
+        self.install().context("Failed to install workspace")?;
 
         self.setup(shell)
             .with_context(|| format!("Failed to setup shell integration for {}", shell))?;
@@ -189,10 +188,12 @@ impl Workspace {
         let repo = git2::Repository::open(&self.workspace_dir)
             .context("Workspace exists but is not a git repository")?;
 
-        let remote = repo.find_remote("origin")
+        let remote = repo
+            .find_remote("origin")
             .context("Workspace git repository has no 'origin' remote")?;
 
-        let actual_url = remote.url()
+        let actual_url = remote
+            .url()
             .ok_or_else(|| anyhow::anyhow!("Origin remote has no URL"))?;
 
         let actual_normalized = Self::canonical_url(actual_url);
@@ -241,8 +242,12 @@ impl Workspace {
     fn create(&self) -> Result<()> {
         println!("Creating template workspace at {:?}...", self.workspace_dir);
 
-        fs::create_dir_all(&self.workspace_dir)
-            .with_context(|| format!("Failed to create workspace directory {:?}", self.workspace_dir))?;
+        fs::create_dir_all(&self.workspace_dir).with_context(|| {
+            format!(
+                "Failed to create workspace directory {:?}",
+                self.workspace_dir
+            )
+        })?;
 
         for template in TEMPLATE_FILES {
             let file_path = self.workspace_dir.join(template.path);
@@ -266,8 +271,12 @@ impl Workspace {
 
         println!("Cloning repository: {}", url);
 
-        git2::Repository::clone(&url, &self.workspace_dir)
-            .with_context(|| format!("Failed to clone repository {} to {:?}", url, self.workspace_dir))?;
+        git2::Repository::clone(&url, &self.workspace_dir).with_context(|| {
+            format!(
+                "Failed to clone repository {} to {:?}",
+                url, self.workspace_dir
+            )
+        })?;
 
         println!("✓ Repository cloned");
         Ok(())
@@ -312,8 +321,7 @@ impl Workspace {
     fn add_shell_integration(rc_file: &PathBuf, integration_line: &str) -> Result<()> {
         // Read existing content (or empty if file doesn't exist)
         let existing_content = if rc_file.exists() {
-            fs::read_to_string(rc_file)
-                .with_context(|| format!("Failed to read {:?}", rc_file))?
+            fs::read_to_string(rc_file).with_context(|| format!("Failed to read {:?}", rc_file))?
         } else {
             String::new()
         };
@@ -328,9 +336,15 @@ impl Workspace {
         let new_content = if existing_content.is_empty() {
             format!("# dws shell integration\n{}\n", integration_line)
         } else if existing_content.ends_with('\n') {
-            format!("{}# dws shell integration\n{}\n", existing_content, integration_line)
+            format!(
+                "{}# dws shell integration\n{}\n",
+                existing_content, integration_line
+            )
         } else {
-            format!("{}\n# dws shell integration\n{}\n", existing_content, integration_line)
+            format!(
+                "{}\n# dws shell integration\n{}\n",
+                existing_content, integration_line
+            )
         };
 
         fs::write(rc_file, new_content)
@@ -423,9 +437,8 @@ impl Workspace {
         // Remove tool symlinks
         for entry in lockfile.tool_symlinks() {
             if entry.target.exists() || entry.target.symlink_metadata().is_ok() {
-                fs::remove_file(&entry.target).with_context(|| {
-                    format!("Failed to remove tool symlink {:?}", entry.target)
-                })?;
+                fs::remove_file(&entry.target)
+                    .with_context(|| format!("Failed to remove tool symlink {:?}", entry.target))?;
             }
         }
 
@@ -463,10 +476,22 @@ mod tests {
         let _temp = setup_test_env();
         let workspace = Workspace::new().unwrap();
 
-        assert!(workspace.path(WorkspacePath::Config).to_string_lossy().contains("config"));
-        assert!(workspace.path(WorkspacePath::Manifests).to_string_lossy().contains("manifests"));
-        assert!(workspace.path(WorkspacePath::Lockfile).to_string_lossy().contains("dws.lock"));
-        assert!(workspace.path(WorkspacePath::Bin).to_string_lossy().contains("bin"));
+        assert!(workspace
+            .path(WorkspacePath::Config)
+            .to_string_lossy()
+            .contains("config"));
+        assert!(workspace
+            .path(WorkspacePath::Manifests)
+            .to_string_lossy()
+            .contains("manifests"));
+        assert!(workspace
+            .path(WorkspacePath::Lockfile)
+            .to_string_lossy()
+            .contains("dws.lock"));
+        assert!(workspace
+            .path(WorkspacePath::Bin)
+            .to_string_lossy()
+            .contains("bin"));
     }
 
     #[test]
@@ -536,7 +561,10 @@ mod tests {
         assert!(workspace.workspace_dir.exists());
         assert!(workspace.path(WorkspacePath::Config).exists());
         assert!(workspace.path(WorkspacePath::Manifests).exists());
-        assert!(workspace.path(WorkspacePath::Config).join("zsh/.zshrc").exists());
+        assert!(workspace
+            .path(WorkspacePath::Config)
+            .join("zsh/.zshrc")
+            .exists());
         assert!(workspace.workspace_dir.join("README.md").exists());
     }
 
@@ -559,7 +587,8 @@ mod tests {
 
         let tree = repo.find_tree(tree_id).unwrap();
         let sig = git2::Signature::now("Test", "test@example.com").unwrap();
-        repo.commit(Some("HEAD"), &sig, &sig, "Initial commit", &tree, &[]).unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "Initial commit", &tree, &[])
+            .unwrap();
 
         assert!(!workspace.workspace_dir.exists());
 
@@ -640,7 +669,10 @@ mod tests {
     #[case("https://github.com/user/repo/", "https://github.com/user/repo.git")]
     #[case("http://github.com/user/repo", "http://github.com/user/repo.git")]
     #[case("https://gitlab.com/user/repo", "https://gitlab.com/user/repo.git")]
-    #[case("https://bitbucket.org/user/repo", "https://bitbucket.org/user/repo.git")]
+    #[case(
+        "https://bitbucket.org/user/repo",
+        "https://bitbucket.org/user/repo.git"
+    )]
     #[case("git@github.com:user/repo.git", "git@github.com:user/repo.git")]
     #[case("git@gitlab.com:user/repo.git", "git@gitlab.com:user/repo.git")]
     #[case("file:///path/to/repo", "file:///path/to/repo")]
@@ -663,11 +695,26 @@ mod tests {
         assert!(workspace.workspace_dir.join("README.md").exists());
         assert!(workspace.workspace_dir.join(".gitignore").exists());
         assert!(workspace.workspace_dir.join(".dwsignore").exists());
-        assert!(workspace.path(WorkspacePath::Config).join("zsh/.zshrc").exists());
-        assert!(workspace.path(WorkspacePath::Config).join("bash/.bashrc").exists());
-        assert!(workspace.path(WorkspacePath::Config).join("fish/config.fish").exists());
-        assert!(workspace.path(WorkspacePath::Manifests).join("cli.toml").exists());
-        assert!(workspace.path(WorkspacePath::Manifests).join("macos.toml").exists());
+        assert!(workspace
+            .path(WorkspacePath::Config)
+            .join("zsh/.zshrc")
+            .exists());
+        assert!(workspace
+            .path(WorkspacePath::Config)
+            .join("bash/.bashrc")
+            .exists());
+        assert!(workspace
+            .path(WorkspacePath::Config)
+            .join("fish/config.fish")
+            .exists());
+        assert!(workspace
+            .path(WorkspacePath::Manifests)
+            .join("cli.toml")
+            .exists());
+        assert!(workspace
+            .path(WorkspacePath::Manifests)
+            .join("macos.toml")
+            .exists());
     }
 
     #[test]
@@ -689,7 +736,8 @@ mod tests {
 
         let tree = repo.find_tree(tree_id).unwrap();
         let sig = git2::Signature::now("Test", "test@example.com").unwrap();
-        repo.commit(Some("HEAD"), &sig, &sig, "Initial commit", &tree, &[]).unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "Initial commit", &tree, &[])
+            .unwrap();
 
         assert!(!workspace.workspace_dir.exists());
 

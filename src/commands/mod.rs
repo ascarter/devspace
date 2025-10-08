@@ -16,10 +16,7 @@ pub fn execute(cli: Cli) -> Result<()> {
     let workspace = Workspace::new()?;
 
     match cli.command {
-        Commands::Init {
-            repository,
-            shell,
-        } => init::execute(&workspace, repository, shell),
+        Commands::Init { repository, shell } => init::execute(&workspace, repository, shell),
 
         Commands::Sync => sync::execute(&workspace),
 

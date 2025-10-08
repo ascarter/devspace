@@ -45,15 +45,19 @@ pub struct ToolEntry {
     pub target: PathBuf,
 }
 
+impl Default for Lockfile {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Lockfile {
     /// Create a new lockfile
     pub fn new() -> Self {
         let now = chrono::Utc::now().to_rfc3339();
         Self {
             version: 1,
-            metadata: Metadata {
-                installed_at: now,
-            },
+            metadata: Metadata { installed_at: now },
             config_symlinks: Vec::new(),
             tool_symlinks: Vec::new(),
         }
@@ -76,8 +80,7 @@ impl Lockfile {
                 .with_context(|| format!("Failed to create lockfile directory {:?}", parent))?;
         }
 
-        let contents =
-            toml::to_string_pretty(self).context("Failed to serialize lockfile")?;
+        let contents = toml::to_string_pretty(self).context("Failed to serialize lockfile")?;
 
         fs::write(path, contents)
             .with_context(|| format!("Failed to write lockfile to {:?}", path))?;
@@ -91,7 +94,13 @@ impl Lockfile {
     }
 
     /// Add a tool symlink entry
-    pub fn add_tool_symlink(&mut self, name: String, version: String, source: PathBuf, target: PathBuf) {
+    pub fn add_tool_symlink(
+        &mut self,
+        name: String,
+        version: String,
+        source: PathBuf,
+        target: PathBuf,
+    ) {
         self.tool_symlinks.push(ToolEntry {
             name,
             version,
@@ -156,10 +165,7 @@ mod tests {
     fn test_lockfile_add_entries() {
         let mut lockfile = Lockfile::new();
 
-        lockfile.add_config_symlink(
-            PathBuf::from("/a"),
-            PathBuf::from("/b"),
-        );
+        lockfile.add_config_symlink(PathBuf::from("/a"), PathBuf::from("/b"));
         lockfile.add_tool_symlink(
             "tool".to_string(),
             "1.0".to_string(),
@@ -199,8 +205,14 @@ mod tests {
         // Test config symlinks iterator
         let config_entries: Vec<_> = lockfile.config_symlinks().collect();
         assert_eq!(config_entries.len(), 2);
-        assert_eq!(config_entries[0].source, PathBuf::from("/config/zsh/.zshrc"));
-        assert_eq!(config_entries[1].source, PathBuf::from("/config/nvim/init.lua"));
+        assert_eq!(
+            config_entries[0].source,
+            PathBuf::from("/config/zsh/.zshrc")
+        );
+        assert_eq!(
+            config_entries[1].source,
+            PathBuf::from("/config/nvim/init.lua")
+        );
 
         // Test tool symlinks iterator
         let tool_entries: Vec<_> = lockfile.tool_symlinks().collect();
