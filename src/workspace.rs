@@ -7,15 +7,15 @@ use crate::config::Config;
 use crate::environment::{Environment, Shell};
 use crate::lockfile::Lockfile;
 
-/// Workspace - represents the devws installation
+/// Workspace - represents the dws installation
 ///
-/// The workspace is rooted at $XDG_CONFIG_HOME/devws and represents your dotfiles.
+/// The workspace is rooted at $XDG_CONFIG_HOME/dws and represents your dotfiles.
 /// No profiles, no switching - this IS your environment.
 #[derive(Debug)]
 pub struct Workspace {
-    /// Workspace root: $XDG_CONFIG_HOME/devws (version controlled)
+    /// Workspace root: $XDG_CONFIG_HOME/dws (version controlled)
     workspace_dir: PathBuf,
-    /// State directory: $XDG_STATE_HOME/devws (local execution state)
+    /// State directory: $XDG_STATE_HOME/dws (local execution state)
     state_dir: PathBuf,
 }
 
@@ -23,8 +23,8 @@ impl Workspace {
     /// Create a new Workspace
     ///
     /// Initializes workspace with XDG-compliant directories:
-    /// - Workspace: $XDG_CONFIG_HOME/devws (default: ~/.config/devws)
-    /// - State: $XDG_STATE_HOME/devws (default: ~/.local/state/devws)
+    /// - Workspace: $XDG_CONFIG_HOME/dws (default: ~/.config/dws)
+    /// - State: $XDG_STATE_HOME/dws (default: ~/.local/state/dws)
     pub fn new() -> Result<Self> {
         let workspace_dir = Self::get_workspace_dir()?;
         let state_dir = Self::get_state_dir()?;
@@ -35,7 +35,7 @@ impl Workspace {
         })
     }
 
-    /// Get the workspace directory (XDG_CONFIG_HOME/devws)
+    /// Get the workspace directory (XDG_CONFIG_HOME/dws)
     fn get_workspace_dir() -> Result<PathBuf> {
         let base = env::var("XDG_CONFIG_HOME")
             .map(PathBuf::from)
@@ -46,10 +46,10 @@ impl Workspace {
                     .join(".config")
             });
 
-        Ok(base.join("devws"))
+        Ok(base.join("dws"))
     }
 
-    /// Get the state directory (XDG_STATE_HOME/devws)
+    /// Get the state directory (XDG_STATE_HOME/dws)
     fn get_state_dir() -> Result<PathBuf> {
         let base = env::var("XDG_STATE_HOME")
             .map(PathBuf::from)
@@ -60,7 +60,7 @@ impl Workspace {
                     .join(".local/state")
             });
 
-        Ok(base.join("devws"))
+        Ok(base.join("dws"))
     }
 
     /// Get the config directory (workspace_dir/config)
@@ -75,7 +75,7 @@ impl Workspace {
 
     /// Get the lockfile path
     pub fn lockfile_path(&self) -> PathBuf {
-        self.state_dir.join("devws.lock")
+        self.state_dir.join("dws.lock")
     }
 
     /// Get the bin directory in state
@@ -206,8 +206,8 @@ mod tests {
         let _temp = setup_test_env();
         let workspace = Workspace::new().unwrap();
 
-        assert!(workspace.workspace_dir.to_string_lossy().contains("devws"));
-        assert!(workspace.state_dir.to_string_lossy().contains("devws"));
+        assert!(workspace.workspace_dir.to_string_lossy().contains("dws"));
+        assert!(workspace.state_dir.to_string_lossy().contains("dws"));
     }
 
     #[test]
@@ -218,7 +218,7 @@ mod tests {
 
         assert!(workspace.config_dir().to_string_lossy().contains("config"));
         assert!(workspace.manifests_dir().to_string_lossy().contains("manifests"));
-        assert!(workspace.lockfile_path().to_string_lossy().contains("devws.lock"));
+        assert!(workspace.lockfile_path().to_string_lossy().contains("dws.lock"));
         assert!(workspace.bin_dir().to_string_lossy().contains("bin"));
     }
 

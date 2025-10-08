@@ -1,11 +1,11 @@
-# devws workspace
+# dws workspace
 
-This workspace was created by devws (Developer Workspace).
+This workspace was created by dws (Developer Workspace).
 
 ## Structure
 
 ```
-$XDG_CONFIG_HOME/devws/          # Your dotfiles repo (version controlled)
+$XDG_CONFIG_HOME/dws/            # Your dotfiles repo (version controlled)
   config/                        # XDG config files → symlinked to $XDG_CONFIG_HOME
     zsh/
       .zshrc
@@ -26,17 +26,17 @@ $XDG_CONFIG_HOME/devws/          # Your dotfiles repo (version controlled)
 To share this workspace across machines:
 
 ```bash
-cd $XDG_CONFIG_HOME/devws
+cd $XDG_CONFIG_HOME/dev
 git init
 git add .
-git commit -m "Initial devws workspace"
+git commit -m "Initial dws workspace"
 gh repo create dotfiles --public --source=. --push
 ```
 
 Then on another machine:
 
 ```bash
-devws init yourusername/dotfiles
+dws init yourusername/dotfiles
 ```
 
 ## Customizing
@@ -44,14 +44,14 @@ devws init yourusername/dotfiles
 1. Add your dotfiles to `config/` (e.g., `config/zsh/.zshrc`, `config/nvim/init.lua`)
 2. Edit manifests to include your preferred tools
 3. Commit and push changes
-4. Run `devws sync` on other machines to pull updates
+4. Run `dws sync` on other machines to pull updates
 
 ## Shell Integration
 
-The `devws init` command sets up shell integration automatically:
+The `dws init` command sets up shell integration automatically:
 
-- **zsh**: Adds `eval "$(devws env --shell zsh)"` to `~/.zshenv`
-- **bash**: Adds `eval "$(devws env --shell bash)"` to `~/.bashrc`
-- **fish**: Adds `devws env --shell fish | source` to `~/.config/fish/config.fish`
+- **zsh**: Adds `eval "$(dws env --shell zsh)"` to `~/.zshenv`
+- **bash**: Adds `eval "$(dws env --shell bash)"` to `~/.bashrc`
+- **fish**: Adds `dws env --shell fish | source` to `~/.config/fish/config.fish`
 
-You can run `devws init --shell <shell>` multiple times to set up different shells.
+You can run `dws init --shell <shell>` multiple times to set up different shells.

@@ -1,4 +1,4 @@
-# devws bash configuration
+# dws bash configuration
 # This is a minimal starter configuration - customize to your needs
 
 # History configuration

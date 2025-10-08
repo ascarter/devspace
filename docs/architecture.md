@@ -1,11 +1,11 @@
-# Developer Workspace (devws) Design v3 (2025-10-07)
+# Developer Workspace (dws) Design v3 (2025-10-07)
 
 ## Architecture
 
 ### Directory Structure
 
 ```
-~/.config/devws/              # Your dotfiles repo (version controlled)
+~/.config/dws/                # Your dotfiles repo (version controlled)
   config/                     # XDG config files → symlinked to ~/.config
     zsh/
       .zshrc
@@ -16,34 +16,34 @@
     macos.toml                # macOS-specific
   README.md
 
-~/.local/state/devws/         # XDG_STATE_HOME (local execution state)
-  devws.lock                  # Lockfile tracking installed state
+~/.local/state/dws/           # XDG_STATE_HOME (local execution state)
+  dws.lock                    # Lockfile tracking installed state
   bin/                        # Tool symlinks → cache
   share/
     man/
     zsh/site-functions/
 
-~/.cache/devws/               # XDG_CACHE_HOME (downloaded binaries)
+~/.cache/dws/                 # XDG_CACHE_HOME (downloaded binaries)
   apps/
     <tool>/<version>/         # Actual binaries (can be cleared/rebuilt)
 ```
 
 ### Key Design Decisions
 
-1. **XDG-only approach**: devws is purpose-built for XDG Base Directory layout
+1. **XDG-only approach**: dws is purpose-built for XDG Base Directory layout
    - Config files symlink to `$XDG_CONFIG_HOME` (default: `~/.config`)
    - No support for dotfiles in home directory root
-   - Structure mirrors XDG: `devws/config/zsh/.zshrc` → `~/.config/zsh/.zshrc`
-2. **Single workspace model**: `~/.config/devws` IS your dotfiles repo
+   - Structure mirrors XDG: `dws/config/zsh/.zshrc` → `~/.config/zsh/.zshrc`
+2. **Single workspace model**: `~/.config/dev` IS your dotfiles repo
    - No "profiles" - one workspace per machine/container
    - Version controlled (git repo)
    - Different environments = different machines/containers
 3. **Separation of concerns**:
-   - `~/.config/devws`: Source of truth (version controlled)
-   - `~/.local/state/devws`: Execution state (local, not in git)
-   - `~/.cache/devws`: Downloaded binaries (can be cleared)
+   - `~/.config/dev`: Source of truth (version controlled)
+   - `~/.local/state/dev`: Execution state (local, not in git)
+   - `~/.cache/dev`: Downloaded binaries (can be cleared)
 4. **Lockfile-based state tracking**: Similar to Cargo.lock
-   - `devws.lock` in state directory tracks installed symlinks
+   - `dws.lock` in state directory tracks installed symlinks
    - Records exact paths, versions, and timestamps
    - Enables reliable cleanup and drift detection
    - Not checked into git (machine-specific, lives in XDG_STATE_HOME)
@@ -55,47 +55,47 @@
 
 ```bash
 # Bootstrap (one-time setup)
-devws init [repository]          # Initialize workspace (auto-detects shell from $SHELL)
+dws init [repository]            # Initialize workspace (auto-detects shell from $SHELL)
                                  # --shell <shell>: Override shell detection
                                  # --force: Overwrite existing workspace
 
 # Daily operations
-devws sync                       # Pull changes, reinstall configs/tools
-devws update [tool]              # Update tools (respect pins, show newer)
-devws status                     # Show workspace status
+dws sync                         # Pull changes, reinstall configs/tools
+dws update [tool]                # Update tools (respect pins, show newer)
+dws status                       # Show workspace status
 
 # Maintenance
-devws reset                      # Clean git state + reinstall everything
+dws reset                        # Clean git state + reinstall everything
                                  # --force: Skip confirmation
-devws cleanup                    # Remove unused cache, orphaned symlinks
+dws cleanup                      # Remove unused cache, orphaned symlinks
 
 # Self-management
-devws self info                  # Show version, disk usage
-devws self update                # Update devws binary
-devws self uninstall             # Remove everything (with confirmation)
+dws self info                    # Show version, disk usage
+dws self update                  # Update dev binary
+dws self uninstall               # Remove everything (with confirmation)
 
 # Environment (called by shell)
-devws env --shell <shell>        # Output env setup for shell init
+dws env --shell <shell>          # Output env setup for shell init
 ```
 
 ## Shell Integration
 
 ```bash
-# Added by `devws init zsh` to ~/.zshenv
-eval "$(devws env)"
+# Added by `dws init` to ~/.zshenv
+eval "$(dws env)"
 ```
 
-`devws env` outputs environment setup for the shell:
+`dws env` outputs environment setup for the shell:
 ```bash
-export PATH="$HOME/.local/state/devws/bin:$PATH"
-export MANPATH="$HOME/.local/state/devws/share/man:$MANPATH"
-fpath=($HOME/.local/state/devws/share/zsh/site-functions $fpath)
+export PATH="$HOME/.local/state/dev/bin:$PATH"
+export MANPATH="$HOME/.local/state/dev/share/man:$MANPATH"
+fpath=($HOME/.local/state/dev/share/zsh/site-functions $fpath)
 ```
 
 ## Lockfile Format
 
 ```toml
-# ~/.local/state/devws/devws.lock
+# ~/.local/state/dws/dws.lock
 # Machine-generated - tracks resolved state of installed workspace
 
 version = 1
@@ -104,37 +104,37 @@ version = 1
 installed_at = "2025-10-07T12:34:56.789Z"
 
 [[config_symlinks]]
-source = "/Users/user/.config/devws/config/zsh/.zshrc"
+source = "/Users/user/.config/dev/config/zsh/.zshrc"
 target = "/Users/user/.config/zsh/.zshrc"
 
 [[config_symlinks]]
-source = "/Users/user/.config/devws/config/nvim/init.lua"
+source = "/Users/user/.config/dev/config/nvim/init.lua"
 target = "/Users/user/.config/nvim/init.lua"
 
 [[tool_symlinks]]
 name = "rg"
 version = "14.0.0"
-source = "/Users/user/.cache/devws/apps/ripgrep/14.0.0/rg"
-target = "/Users/user/.local/state/devws/bin/rg"
+source = "/Users/user/.cache/dev/apps/ripgrep/14.0.0/rg"
+target = "/Users/user/.local/state/dev/bin/rg"
 
 [[tool_symlinks]]
 name = "fd"
 version = "9.0.0"
-source = "/Users/user/.cache/devws/apps/fd/9.0.0/fd"
-target = "/Users/user/.local/state/devws/bin/fd"
+source = "/Users/user/.cache/dev/apps/fd/9.0.0/fd"
+target = "/Users/user/.local/state/dev/bin/fd"
 ```
 
 **Purpose:**
 - Tracks exactly what symlinks are installed for this workspace
 - Enables reliable cleanup and reinstall
-- Provides audit trail for `devws status` and `devws cleanup`
-- Detects drift (symlinks changed/removed outside devws)
-- Generated/updated on `devws init`, `devws sync`, `devws update`
+- Provides audit trail for `dws status` and `dws cleanup`
+- Detects drift (symlinks changed/removed outside dev)
+- Generated/updated on `dws init`, `dws sync`, `dws update`
 
 ## Manifest Format
 
 ```toml
-# ~/.config/devws/manifests/cli.toml
+# ~/.config/dws/manifests/cli.toml
 
 [ripgrep]
 installer = "ubi"
@@ -157,52 +157,52 @@ self_update = true              # Has built-in update mechanism
 
 ### Fresh machine setup
 ```bash
-curl -fsSL https://devws.dev/install.sh | sh
-devws init ascarter/dotfiles  # Auto-detects shell from $SHELL
+curl -fsSL https://dws.ascarter.dev/install.sh | sh
+dws init ascarter/dotfiles  # Auto-detects shell from $SHELL
 exec $SHELL
 ```
 
 ### Manually cloned workspace
 ```bash
-git clone git@github.com:ascarter/dotfiles.git ~/.config/devws
-devws init  # Auto-detects shell
+git clone git@github.com:ascarter/dotfiles.git ~/.config/dev
+dws init  # Auto-detects shell
 exec $SHELL
 ```
 
 ### Different workspace (different machine/container)
 ```bash
 # On work machine/container
-devws init ascarter/work-dotfiles  # Auto-detects shell
+dws init ascarter/work-dotfiles  # Auto-detects shell
 exec $SHELL
 ```
 
 ### Multiple shells on same machine
 ```bash
 # Setup for zsh
-devws init --shell zsh
+dws init --shell zsh
 
 # Also setup for bash (updates bash integration only)
-devws init --shell bash
+dws init --shell bash
 
 # Also setup for fish (updates fish integration only)
-devws init --shell fish
+dws init --shell fish
 ```
 
 ### Daily sync
 ```bash
-devws sync      # Pull workspace updates, reinstall
-devws update    # Check for tool updates, respect pins
+dws sync      # Pull workspace updates, reinstall
+dws update    # Check for tool updates, respect pins
 ```
 
 ### Clean reinstall
 ```bash
-devws reset     # Clean git state + reinstall everything
+dws reset     # Clean git state + reinstall everything
 ```
 
 ### Maintenance
 ```bash
-devws cleanup   # Remove unused cache and orphaned symlinks
-devws status    # Show what's installed
+dws cleanup   # Remove unused cache and orphaned symlinks
+dws status    # Show what's installed
 ```
 
 ## Implementation Status

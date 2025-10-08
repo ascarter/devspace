@@ -1,10 +1,10 @@
 use clap::{Parser, Subcommand};
 
-/// Developer Workspace - Personal development environment manager
+/// Developer Workspace - Personal development workspace manager
 ///
-/// devws manages your dotfiles and development tools through declarative
+/// dws manages your dotfiles and development tools through declarative
 /// manifests. Bootstrap new machines, sync configurations, and maintain your
-/// dev environment with a single portable binary.
+/// workspace with a single portable binary.
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
@@ -21,7 +21,7 @@ pub enum Commands {
     /// Initialize workspace (create template or use existing/cloned repo)
     ///
     /// Use cases:
-    /// - New machine, no workspace: Creates template at $XDG_CONFIG_HOME/devws
+    /// - New machine, no workspace: Creates template at $XDG_CONFIG_HOME/dws
     /// - Workspace exists (manually cloned): Uses existing workspace
     /// - With <repository>: Clones repository (warns if workspace exists)
     /// - Run multiple times for different shells (updates shell integration only)
@@ -69,22 +69,22 @@ pub enum Commands {
         shell: String,
     },
 
-    /// Manage devws itself
+    /// Manage dws itself
     #[command(subcommand)]
     Self_(SelfAction),
 }
 
 #[derive(Subcommand, Debug)]
 pub enum SelfAction {
-    /// Show devws information (version, disk usage, profiles)
+    /// Show dws information (version, disk usage)
     #[command(name = "info")]
     Info,
 
-    /// Update devws to latest version
+    /// Update dws to latest version
     #[command(name = "update")]
     Update,
 
-    /// Uninstall devws and remove all data
+    /// Uninstall dws and remove all data
     #[command(name = "uninstall")]
     Uninstall,
 }

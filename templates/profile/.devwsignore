@@ -1,4 +1,4 @@
-# devws ignore patterns
+# dws ignore patterns
 #
 # Files matching these patterns will not be symlinked to $XDG_CONFIG_HOME
 # Syntax:
@@ -7,9 +7,9 @@
 #   - Directory: manifests/
 #   - Comments: Lines starting with #
 #
-# Note: .git, .DS_Store, and .devwsignore are always ignored (built-in)
+# Note: .git, .DS_Store, and .devignore are always ignored (built-in)
 
-# devws-specific directories (not config files)
+# dws-specific directories (not config files)
 manifests/
 
 # Version control and editor files

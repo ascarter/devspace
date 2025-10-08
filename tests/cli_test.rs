@@ -2,7 +2,7 @@ use assert_cmd::Command;
 
 #[test]
 fn test_init_with_auto_detect_shell() {
-    let mut cmd = Command::cargo_bin("devws").unwrap();
+    let mut cmd = Command::cargo_bin("dws").unwrap();
     cmd.arg("init")
         .arg("ascarter/dotfiles")
         .assert()
@@ -11,7 +11,7 @@ fn test_init_with_auto_detect_shell() {
 
 #[test]
 fn test_init_with_explicit_shell() {
-    let mut cmd = Command::cargo_bin("devws").unwrap();
+    let mut cmd = Command::cargo_bin("dws").unwrap();
     cmd.arg("init")
         .arg("--shell")
         .arg("bash")
@@ -22,13 +22,13 @@ fn test_init_with_explicit_shell() {
 
 #[test]
 fn test_init_no_repo() {
-    let mut cmd = Command::cargo_bin("devws").unwrap();
+    let mut cmd = Command::cargo_bin("dws").unwrap();
     cmd.arg("init").assert().success();
 }
 
 #[test]
 fn test_init_shell_flag_short() {
-    let mut cmd = Command::cargo_bin("devws").unwrap();
+    let mut cmd = Command::cargo_bin("dws").unwrap();
     cmd.arg("init")
         .arg("-s")
         .arg("fish")
@@ -38,7 +38,7 @@ fn test_init_shell_flag_short() {
 
 #[test]
 fn test_init_with_force() {
-    let mut cmd = Command::cargo_bin("devws").unwrap();
+    let mut cmd = Command::cargo_bin("dws").unwrap();
     cmd.arg("init")
         .arg("--force")
         .arg("ascarter/dotfiles")
@@ -48,13 +48,13 @@ fn test_init_with_force() {
 
 #[test]
 fn test_help_output() {
-    let mut cmd = Command::cargo_bin("devws").unwrap();
+    let mut cmd = Command::cargo_bin("dws").unwrap();
     cmd.arg("--help").assert().success();
 }
 
 #[test]
 fn test_init_help() {
-    let mut cmd = Command::cargo_bin("devws").unwrap();
+    let mut cmd = Command::cargo_bin("dws").unwrap();
     cmd.arg("init")
         .arg("--help")
         .assert()

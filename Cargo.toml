@@ -1,10 +1,10 @@
 [package]
-name = "devws"
+name = "dws"
 version = "0.1.0"
 edition = "2021"
 authors = ["Andrew Carter (@ascarter)"]
-description = "Developer Workspace - Personal development environment manager"
-repository = "https://github.com/ascarter/devws"
+description = "Developer workspace manager - Manage your dotfiles and dev tools"
+repository = "https://github.com/ascarter/dws"
 license = "MIT"
 keywords = ["dotfiles", "environment", "tools", "devops", "workspace"]
 categories = ["command-line-utilities", "development-tools"]
@@ -28,7 +28,7 @@ serial_test = "3.2.0"
 tempfile = "3.12"
 
 [[bin]]
-name = "devws"
+name = "dws"
 path = "src/main.rs"
 
 [profile.release]

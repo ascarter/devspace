@@ -1,4 +1,4 @@
-# devws zsh configuration
+# dws zsh configuration
 # This is a minimal starter configuration - customize to your needs
 
 # History configuration
