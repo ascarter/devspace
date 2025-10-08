@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use crate::config::Config;
 use crate::environment::{Environment, Shell};
 use crate::lockfile::Lockfile;
+use crate::manifest::ManifestSet;
 
 /// Template file definition for workspace initialization
 struct TemplateFile {
@@ -378,8 +379,19 @@ impl Workspace {
         Environment::new_from_workspace(self, shell)
     }
 
+    /// Load tool manifests defined for this workspace.
+    pub fn manifests(&self) -> Result<ManifestSet> {
+        let manifest_dir = self.path(WorkspacePath::Manifests);
+        ManifestSet::load_from_dir(&manifest_dir)
+    }
+
     /// Install the workspace (symlink configs, install tools)
     pub fn install(&self) -> Result<()> {
+        let manifests = self.manifests()?;
+        if !manifests.is_empty() {
+            // TODO: Install tools from manifests and add to lockfile
+        }
+
         // Ensure state directories exist before installing assets
         let bin_dir = self.path(WorkspacePath::Bin);
         fs::create_dir_all(&bin_dir)
@@ -473,6 +485,7 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::manifest::InstallerKind;
     use rstest::rstest;
     use serial_test::serial;
     use tempfile::TempDir;
@@ -521,6 +534,31 @@ mod tests {
 
     #[test]
     #[serial]
+    fn test_workspace_manifests() {
+        let _temp = setup_test_env();
+        let workspace = Workspace::new().unwrap();
+
+        let manifest_dir = workspace.path(WorkspacePath::Manifests);
+        fs::create_dir_all(&manifest_dir).unwrap();
+        fs::write(
+            manifest_dir.join("cli.toml"),
+            r#"
+[ripgrep]
+installer = "ubi"
+project = "BurntSushi/ripgrep"
+"#,
+        )
+        .unwrap();
+
+        let manifests = workspace.manifests().unwrap();
+        assert_eq!(manifests.len(), 1);
+        let entry = manifests.iter().next().unwrap();
+        assert_eq!(entry.name, "ripgrep");
+        assert_eq!(entry.definition.installer, InstallerKind::Ubi);
+    }
+
+    #[test]
+    #[serial]
     fn test_workspace_install() {
         let _temp = setup_test_env();
         let workspace = Workspace::new().unwrap();
@@ -537,10 +575,7 @@ mod tests {
         // Verify lockfile was created
         assert!(workspace.path(WorkspacePath::Lockfile).exists());
         assert!(workspace.path(WorkspacePath::Bin).exists());
-        assert!(workspace
-            .path(WorkspacePath::Share)
-            .join("man")
-            .exists());
+        assert!(workspace.path(WorkspacePath::Share).join("man").exists());
         assert!(workspace
             .path(WorkspacePath::Share)
             .join("zsh/site-functions")

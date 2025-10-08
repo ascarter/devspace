@@ -130,6 +130,7 @@ dws/
 │   ├── commands/        # Subcommand implementations (init, sync, etc.)
 │   ├── config.rs        # Dotfile discovery and symlinking
 │   ├── environment.rs   # Shell environment emission
+│   ├── manifest.rs      # Manifest parsing and tool definitions
 │   ├── lockfile.rs      # Lockfile serialization (TBD wiring)
 │   └── workspace.rs     # Workspace orchestration and templates
 ├── templates/           # Embedded workspace starter files
@@ -169,9 +170,39 @@ pub struct Lockfile {
     pub config_symlinks: Vec<SymlinkEntry>,
     pub tool_symlinks: Vec<ToolEntry>,
 }
+
+pub struct ManifestSet {
+    entries: Vec<ManifestEntry>,
+}
+
+pub struct ManifestEntry {
+    pub name: String,
+    pub source: PathBuf,
+    pub definition: ToolDefinition,
+}
+
+pub struct ToolDefinition {
+    pub installer: InstallerKind,
+    pub project: Option<String>,
+    pub version: Option<String>,
+    pub url: Option<String>,
+    pub shell: Option<String>,
+    pub bin: Vec<String>,
+    pub symlinks: Vec<String>,
+    pub app: Option<String>,
+    pub team_id: Option<String>,
+    pub self_update: bool,
+}
+
+pub enum InstallerKind {
+    Ubi,
+    Dmg,
+    Flatpak,
+    Curl,
+}
 ```
 
-`Workspace` is the façade used by CLI commands. It exposes helpers for initialization, template installation, and shell integration. `Config` discovers and installs symlinks from `workspace/config/` into `$XDG_CONFIG_HOME`. `Environment` renders `dws env` output so shells can source a deterministic PATH. `Lockfile` currently serializes state but still needs to be integrated with install/update flows.
+`Workspace` is the façade used by CLI commands. It exposes helpers for initialization, template installation, and shell integration. `Config` discovers and installs symlinks from `workspace/config/` into `$XDG_CONFIG_HOME`. `Environment` renders `dws env` output so shells can source a deterministic PATH. `ManifestSet` loads typed tool definitions from `workspace/manifests/`, applying overrides in config order (global `cli.toml` → platform manifest → host-specific files). `Lockfile` currently serializes state but still needs to be integrated with install/update flows.
 
 ### Planned Extensions
 

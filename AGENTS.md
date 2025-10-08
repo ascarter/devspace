@@ -4,7 +4,7 @@
 This file is the canonical quickstart for coding assistants (Claude, Codex, GitHub Copilot CLI). Read it together with `README.md` for product context and `ASSISTANT.md` for deep background. When in doubt, prefer updating this document so every agent receives consistent guidance.
 
 ## Project Structure & Module Organization
-The binary entry point is `src/main.rs`, which calls into the public API exposed by `src/lib.rs`. CLI argument parsing lives in `src/cli.rs`; each subcommand has a focused module inside `src/commands/`. Core domain types are defined in `src/config.rs`, `src/environment.rs`, `src/workspace.rs`, and `src/lockfile.rs`. Integration tests live in `tests/cli_test.rs` (extend with additional files under `tests/`). Long-form documentation belongs in `docs/`, while starter profile assets reside in `templates/`. Keep user-facing guidance in `README.md`, `SETUP.md`, and this file.
+The binary entry point is `src/main.rs`, which calls into the public API exposed by `src/lib.rs`. CLI argument parsing lives in `src/cli.rs`; each subcommand has a focused module inside `src/commands/`. Core domain types are defined in `src/config.rs`, `src/environment.rs`, `src/workspace.rs`, `src/manifest.rs`, and `src/lockfile.rs`. Integration tests live in `tests/cli_test.rs` (extend with additional files under `tests/`). Long-form documentation belongs in `docs/`, while starter profile assets reside in `templates/`. Keep user-facing guidance in `README.md`, `SETUP.md`, and this file. Manifests follow config-style precedence: global (`cli.toml`) → platform (e.g. `macos.toml`) → host-specific overrides.
 
 ## Build, Test, and Development Commands
 - `cargo fmt` — Run before commits to enforce formatting.

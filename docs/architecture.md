@@ -49,7 +49,8 @@
    - Not checked into git (machine-specific, lives in XDG_STATE_HOME)
 5. **Cache-based storage**: Tools downloaded once to `~/.cache`, symlinked to state
 6. **Version pinning**: Manifests can pin versions, `update` respects pins
-7. **Wrapper scripts only when needed**: For tools requiring LD_LIBRARY_PATH, etc.
+7. **Manifest override precedence**: `cli.toml` defines global defaults → platform manifests (e.g. `macos.toml`) override globals → host-specific files (any other name) override platform; conflicting definitions at the same scope are rejected.
+8. **Wrapper scripts only when needed**: For tools requiring LD_LIBRARY_PATH, etc.
 
 ## CLI Commands
 
