@@ -154,6 +154,35 @@ dws self uninstall
 
 ## Development
 
+### Developer Setup
+
+1. **Check the toolchain**
+   ```bash
+   rustup show active-toolchain
+   cargo --version
+   ```
+   Ensure Rust 1.70 or newer is installed (`rustup update` if needed).
+
+2. **Build the project**
+   ```bash
+   cargo build
+   ```
+
+3. **Inspect CLI wiring**
+   ```bash
+   cargo run -- --help
+   ```
+
+4. **Run tests**
+   ```bash
+   cargo test
+   ```
+   Append `-- --include-ignored` when running CLI tests that rely on isolated XDG directories.
+
+5. **Review core docs**
+   - `AGENTS.md` — canonical contributor handbook for human and AI agents
+   - `docs/architecture.md` — deeper technical design context
+
 **Prerequisites**:
 - Rust 1.70+
 - Git
@@ -176,8 +205,6 @@ cargo run -- --help
 See [AGENTS.md](AGENTS.md) for contributor guidelines and agent workflow notes.
 
 ## Architecture
-
-See [ASSISTANT.md](ASSISTANT.md) for AI assistant context and development guidelines.
 
 See [docs/architecture.md](docs/architecture.md) for the current implementation design and technical decisions.
 
