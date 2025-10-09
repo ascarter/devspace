@@ -40,10 +40,10 @@ exec $SHELL
 **Or start from scratch**:
 ```bash
 # Create template workspace and setup shell
-dws init
+dws init --profile personal
 
 # Edit your workspace
-cd ~/.config/dws
+cd ~/.config/dws/profiles/personal
 
 # Publish to GitHub
 gh repo create dotfiles --public --source=. --push
@@ -63,31 +63,34 @@ dws status
 
 # Clean up unused cache and orphaned symlinks
 dws cleanup
+
+# Switch profiles
+dws profiles
+dws use work
 ```
 
 ## Workspace Structure
 
 ```
 ~/.config/dws/                 # dws workspace root (reserved for tooling)
-├── profile/                   # User-managed profile (git repo)
-│   ├── config/                # XDG config files → symlinked to ~/.config
-│   │   ├── zsh/
-│   │   │   └── .zshrc
-│   │   ├── nvim/
-│   │   │   └── init.lua
-│   │   └── ...
-│   ├── manifests/             # Tool definitions
-│   │   ├── tools.toml         # Base tools applied everywhere
-│   │   ├── tools-macos.toml   # Platform overrides (optional)
-│   │   └── tools-<hostname>.toml # Host overrides (optional)
-│   └── README.md              # Auto-generated profile docs
+├── config.toml                # Workspace configuration (active profile, etc.)
+├── profiles/                  # User-managed profiles (each is a git repo)
+│   ├── default/               # Default profile created by dws init
+│   │   ├── config/            # XDG config files → symlinked to ~/.config
+│   │   └── manifests/         # Tool definitions
+│   └── <profile>/             # Additional profiles cloned or created
 └── (future dws config)
 ```
 
+### Profiles
+
+- `dws profiles` &mdash; list available profiles (the active one is marked).
+- `dws clone <repo> [--profile name]` &mdash; clone another profile into `profiles/<name>` without activating it.
+- `dws use <profile>` &mdash; switch to a profile (symlinks are updated and `config.toml` is rewritten).
 ### Example Manifest
 
 ```toml
-# profile/manifests/tools.toml
+# profiles/<profile>/manifests/tools.toml
 [ripgrep]
 installer = "ubi"
 project = "BurntSushi/ripgrep"

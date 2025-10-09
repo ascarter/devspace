@@ -143,17 +143,26 @@ dws/
 ```rust
 pub struct Workspace {
     workspace_dir: PathBuf, // ~/.config/dws
+    profiles_dir: PathBuf,  // ~/.config/dws/profiles
     state_dir: PathBuf,     // ~/.local/state/dws
+    cache_dir: PathBuf,     // ~/.cache/dws
+    config_path: PathBuf,   // ~/.config/dws/config.toml
+    workspace_config: Config,
+    active_profile: Profile,
 }
 
 pub struct Config {
+    pub active_profile: String,
+}
+
+pub struct Dotfiles {
     config_dir: PathBuf,
     target_dir: PathBuf,
     ignore_patterns: Vec<String>,
 }
 
 #[derive(Clone)]
-pub struct ConfigEntry {
+pub struct DotfileEntry {
     pub source: PathBuf,
     pub target: PathBuf,
 }
@@ -202,7 +211,7 @@ pub enum InstallerKind {
 }
 ```
 
-`Workspace` is the façade used by CLI commands. It exposes helpers for initialization, template installation, and shell integration. `Config` discovers and installs symlinks from `workspace/config/` into `$XDG_CONFIG_HOME`. `Environment` renders `dws env` output so shells can source a deterministic PATH. `ManifestSet` loads typed tool definitions from `workspace/manifests/`, applying overrides in config order (base `tools.toml` → platform manifest such as `tools-macos.toml` → host-specific files like `tools-<hostname>.toml`). `Lockfile` currently serializes state but still needs to be integrated with install/update flows.
+`Workspace` is the façade used by CLI commands. It keeps track of profiles, workspace configuration, and installs dotfiles/tools. `Dotfiles` discovers and installs symlinks from `profiles/<profile>/config/` into `$XDG_CONFIG_HOME`. `Environment` renders `dws env` output so shells can source a deterministic PATH. `ManifestSet` loads typed tool definitions from `profiles/<profile>/manifests/`, applying overrides in config order (base `tools.toml` → platform manifest such as `tools-macos.toml` → host-specific files like `tools-<hostname>.toml`). `Lockfile` currently serializes state but still needs to be integrated with install/update flows.
 
 ### Planned Extensions
 
@@ -210,7 +219,7 @@ The roadmap introduces richer layering while keeping the current modules intact:
 
 - **Manifest parsing (`Manifest` module)**: strongly typed TOML manifests for tool installation.
 - **Installer backends**: async traits for UBI, DMG, Flatpak, and Curl implementations.
-- **Profiles / workspaces per context**: potential evolution if multi-profile support is reintroduced.
+- **Profiles / workspaces per context**: multi-profile support available via `dws clone`, `dws use`, `dws profiles`.
 - **Platform abstraction**: detect OS/architecture to select manifests and installers.
 
 When implementing these pieces, update `docs/architecture.md` with the final shape and extend `AGENTS.md` so all assistants share the same workflow guidance.

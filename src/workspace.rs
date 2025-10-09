@@ -4,7 +4,8 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::config::Config;
+use crate::config::{default_profile_name, Config};
+use crate::dotfiles::Dotfiles;
 use crate::environment::{Environment, Shell};
 use crate::installers::{self, InstallContext, ToolInstaller};
 use crate::lockfile::Lockfile;
@@ -14,7 +15,7 @@ use tokio::runtime::Runtime;
 
 /// Template file definition for workspace initialization
 struct TemplateFile {
-    /// Path relative to workspace root (e.g., "config/zsh/.zshrc")
+    /// Path relative to a profile root (e.g., "config/zsh/.zshrc")
     path: &'static str,
     /// File content embedded at compile time
     content: &'static str,
@@ -26,35 +27,35 @@ struct TemplateFile {
 /// into the binary. To add a new template file, add it to this array.
 const TEMPLATE_FILES: &[TemplateFile] = &[
     TemplateFile {
-        path: "profile/config/.dwsignore",
+        path: "config/.dwsignore",
         content: include_str!("../templates/profile/config/.dwsignore"),
     },
     TemplateFile {
-        path: "profile/.gitignore",
+        path: ".gitignore",
         content: include_str!("../templates/profile/.gitignore"),
     },
     TemplateFile {
-        path: "profile/README.md",
+        path: "README.md",
         content: include_str!("../templates/profile/README.md"),
     },
     TemplateFile {
-        path: "profile/manifests/tools.toml",
+        path: "manifests/tools.toml",
         content: include_str!("../templates/profile/manifests/tools.toml"),
     },
     TemplateFile {
-        path: "profile/manifests/tools-macos.toml",
+        path: "manifests/tools-macos.toml",
         content: include_str!("../templates/profile/manifests/tools-macos.toml"),
     },
     TemplateFile {
-        path: "profile/config/zsh/.zshrc",
+        path: "config/zsh/.zshrc",
         content: include_str!("../templates/profile/config/zsh/.zshrc"),
     },
     TemplateFile {
-        path: "profile/config/bash/.bashrc",
+        path: "config/bash/.bashrc",
         content: include_str!("../templates/profile/config/bash/.bashrc"),
     },
     TemplateFile {
-        path: "profile/config/fish/config.fish",
+        path: "config/fish/config.fish",
         content: include_str!("../templates/profile/config/fish/config.fish"),
     },
 ];
@@ -64,11 +65,13 @@ const TEMPLATE_FILES: &[TemplateFile] = &[
 pub enum WorkspacePath {
     /// Workspace root: $XDG_CONFIG_HOME/dws
     Root,
-    /// Profile root: $XDG_CONFIG_HOME/dws/profile
+    /// Profiles directory: $XDG_CONFIG_HOME/dws/profiles
+    Profiles,
+    /// Active profile root: $XDG_CONFIG_HOME/dws/profiles/<profile>
     Profile,
-    /// Config directory: workspace/profile/config
+    /// Config directory: active profile config
     Config,
-    /// Manifests directory: workspace/profile/manifests
+    /// Manifests directory: active profile manifests
     Manifests,
     /// Bin directory: $XDG_STATE_HOME/dws/bin
     Bin,
@@ -78,6 +81,8 @@ pub enum WorkspacePath {
     Lockfile,
     /// Cache directory: $XDG_CACHE_HOME/dws
     Cache,
+    /// Workspace config file path
+    ConfigFile,
 }
 
 /// Workspace - represents the dws installation
@@ -87,11 +92,18 @@ pub enum WorkspacePath {
 pub struct Workspace {
     /// Workspace root: $XDG_CONFIG_HOME/dws (version controlled)
     workspace_dir: PathBuf,
+    /// Profiles directory: $XDG_CONFIG_HOME/dws/profiles
+    profiles_dir: PathBuf,
     /// State directory: $XDG_STATE_HOME/dws (local execution state)
     state_dir: PathBuf,
     /// Cache directory: $XDG_CACHE_HOME/dws (downloaded artifacts)
     cache_dir: PathBuf,
-    profile: Profile,
+    /// Path to workspace config file
+    config_path: PathBuf,
+    /// Loaded workspace configuration
+    workspace_config: Config,
+    /// Currently active profile
+    active_profile: Profile,
 }
 
 impl Workspace {
@@ -102,15 +114,23 @@ impl Workspace {
     /// - State: $XDG_STATE_HOME/dws (default: ~/.local/state/dws)
     pub fn new() -> Result<Self> {
         let workspace_dir = Self::get_workspace_dir()?;
+        let profiles_dir = workspace_dir.join("profiles");
         let state_dir = Self::get_state_dir()?;
         let cache_dir = Self::get_cache_dir()?;
-        let profile = Profile::new(workspace_dir.join("profile"));
+        let config_path = workspace_dir.join("config.toml");
+
+        let workspace_config = Config::load(&config_path)?;
+        let active_name = workspace_config.active_profile.clone();
+        let active_profile = Profile::new(active_name.clone(), profiles_dir.join(&active_name));
 
         Ok(Self {
             workspace_dir,
+            profiles_dir,
             state_dir,
             cache_dir,
-            profile,
+            config_path,
+            workspace_config,
+            active_profile,
         })
     }
 
@@ -160,48 +180,132 @@ impl Workspace {
     pub fn path(&self, path_type: WorkspacePath) -> PathBuf {
         match path_type {
             WorkspacePath::Root => self.workspace_dir.clone(),
-            WorkspacePath::Profile => self.profile.root().to_path_buf(),
-            WorkspacePath::Config => self.profile.config_dir(),
-            WorkspacePath::Manifests => self.profile.manifests_dir(),
+            WorkspacePath::Profiles => self.profiles_dir.clone(),
+            WorkspacePath::Profile => self.active_profile.root().to_path_buf(),
+            WorkspacePath::Config => self.active_profile.config_dir(),
+            WorkspacePath::Manifests => self.active_profile.manifests_dir(),
             WorkspacePath::Bin => self.state_dir.join("bin"),
             WorkspacePath::Share => self.state_dir.join("share"),
             WorkspacePath::Lockfile => self.state_dir.join("dws.lock"),
             WorkspacePath::Cache => self.cache_dir.clone(),
+            WorkspacePath::ConfigFile => self.config_path.clone(),
         }
     }
 
     /// Check if workspace exists (has been initialized)
     pub fn exists(&self) -> bool {
-        self.profile.root().exists()
+        self.active_profile.root().exists()
     }
 
     /// Access the active profile
-    pub fn profile(&self) -> &Profile {
-        &self.profile
+    pub fn active_profile(&self) -> &Profile {
+        &self.active_profile
+    }
+
+    pub fn active_profile_name(&self) -> &str {
+        self.workspace_config.active_profile.as_str()
+    }
+
+    pub fn list_profiles(&self) -> Result<Vec<String>> {
+        if !self.profiles_dir.exists() {
+            return Ok(Vec::new());
+        }
+
+        let mut profiles = Vec::new();
+        for entry in fs::read_dir(&self.profiles_dir)? {
+            let entry = entry?;
+            if entry.file_type()?.is_dir() {
+                if let Some(name) = entry.file_name().to_str() {
+                    profiles.push(name.to_string());
+                }
+            }
+        }
+        profiles.sort();
+        Ok(profiles)
+    }
+
+    pub fn clone_into_profile(
+        &self,
+        repository: &str,
+        profile_name: Option<&str>,
+    ) -> Result<String> {
+        let name = profile_name
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| Self::profile_name_from_repository(repository));
+        let profile = Profile::new(name.clone(), self.profile_path(&name));
+        self.clone_profile(repository, &profile)?;
+        Ok(name)
+    }
+
+    pub fn use_profile(&mut self, profile_name: &str) -> Result<()> {
+        if profile_name == self.active_profile_name() {
+            println!("Profile '{}' is already active.", profile_name);
+            return Ok(());
+        }
+
+        let profile = Profile::new(profile_name.to_string(), self.profile_path(profile_name));
+        if !profile.root().exists() {
+            anyhow::bail!("Profile '{}' does not exist", profile_name);
+        }
+
+        let lockfile_path = self.path(WorkspacePath::Lockfile);
+        if lockfile_path.exists() {
+            let lockfile = Lockfile::load(&lockfile_path)?;
+            self.remove_tracked_symlinks(&lockfile)?;
+        }
+
+        self.set_active_profile(profile_name.to_string())?;
+        self.install()?;
+        Ok(())
+    }
+
+    fn profile_path(&self, profile: &str) -> PathBuf {
+        self.profiles_dir.join(profile)
+    }
+
+    fn set_active_profile(&mut self, profile: impl Into<String>) -> Result<()> {
+        let profile = profile.into();
+        fs::create_dir_all(&self.profiles_dir).with_context(|| {
+            format!(
+                "Failed to create profiles directory {:?}",
+                self.profiles_dir
+            )
+        })?;
+        self.workspace_config.active_profile = profile.clone();
+        self.active_profile = Profile::new(profile.clone(), self.profile_path(&profile));
+        self.workspace_config.save(&self.config_path)?;
+        Ok(())
     }
 
     /// Initialize workspace and shell integration
-    pub fn init(&self, repository: Option<&str>, shell: &str) -> Result<()> {
-        let exists = self.profile.root().exists();
+    pub fn init(
+        &mut self,
+        repository: Option<&str>,
+        shell: &str,
+        profile: Option<&str>,
+    ) -> Result<()> {
+        let target_name = if let Some(name) = profile {
+            name.to_string()
+        } else if let Some(repo) = repository {
+            Self::profile_name_from_repository(repo)
+        } else {
+            self.workspace_config.active_profile.clone()
+        };
 
-        match (exists, repository) {
-            (false, None) => {
-                self.create()?;
-            }
+        let target_profile = Profile::new(target_name.clone(), self.profile_path(&target_name));
 
-            (false, Some(repo)) => {
-                self.clone(repo)?;
+        if let Some(repo) = repository {
+            if target_profile.root().exists() {
+                Self::verify_profile_repo(&target_profile, repo)?;
+                println!("Using existing profile at {:?}.", target_profile.root());
+            } else {
+                self.clone_profile(repo, &target_profile)?;
             }
-
-            (true, None) => {
-                println!("Using existing workspace at {:?}", self.profile.root());
-            }
-
-            (true, Some(repo)) => {
-                self.verify_url(repo)?;
-                println!("Using existing workspace at {:?}", self.profile.root());
-            }
+        } else {
+            self.ensure_profile_template(&target_profile)?;
         }
+
+        self.set_active_profile(target_name)?;
 
         println!("Installing workspace...");
         self.install().context("Failed to install workspace")?;
@@ -211,17 +315,17 @@ impl Workspace {
 
         println!("\n✓ Workspace initialized successfully!");
         println!("  Shell: {}", shell);
-        println!("  Profile: {:?}", self.profile.root());
+        println!("  Profile: {:?}", self.active_profile.root());
         println!("\nRun 'exec $SHELL' to reload your shell.");
 
         Ok(())
     }
 
     /// Verify that the workspace's git remote URL matches the provided repository
-    fn verify_url(&self, expected_repo: &str) -> Result<()> {
+    fn verify_profile_repo(profile: &Profile, expected_repo: &str) -> Result<()> {
         let expected_url = Self::canonical_url(expected_repo);
 
-        let repo = git2::Repository::open(self.profile.root())
+        let repo = git2::Repository::open(profile.root())
             .context("Workspace exists but profile is not a git repository")?;
 
         let remote = repo
@@ -239,7 +343,7 @@ impl Workspace {
                 "Workspace repository URL mismatch\n  Expected: {}\n  Actual:   {}\n\nThe workspace at {:?} was cloned from a different repository.",
                 expected_url,
                 actual_normalized,
-                self.profile.root()
+                profile.root()
             );
         }
 
@@ -277,12 +381,25 @@ impl Workspace {
         }
     }
 
-    /// Create workspace from template
-    fn create(&self) -> Result<()> {
-        println!(
-            "Creating template workspace at {:?}...",
-            self.profile.root()
-        );
+    fn profile_name_from_repository(repository: &str) -> String {
+        let trimmed = repository
+            .trim()
+            .trim_end_matches('/')
+            .trim_end_matches(".git");
+        trimmed
+            .rsplit(|c| ['/', ':'].contains(&c))
+            .next()
+            .map(|s| s.to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| default_profile_name().to_string())
+    }
+
+    fn ensure_profile_template(&self, profile: &Profile) -> Result<()> {
+        if profile.root().exists() {
+            println!("Updating template profile at {:?}...", profile.root());
+        } else {
+            println!("Creating template profile at {:?}...", profile.root());
+        }
 
         fs::create_dir_all(&self.workspace_dir).with_context(|| {
             format!(
@@ -291,50 +408,57 @@ impl Workspace {
             )
         })?;
 
-        fs::create_dir_all(self.profile.root()).with_context(|| {
+        fs::create_dir_all(&self.profiles_dir).with_context(|| {
             format!(
-                "Failed to create profile directory {:?}",
-                self.profile.root()
+                "Failed to create profiles directory {:?}",
+                self.profiles_dir
             )
         })?;
 
         for template in TEMPLATE_FILES {
-            let file_path = self.workspace_dir.join(template.path);
+            let file_path = profile.root().join(template.path);
 
             if let Some(parent) = file_path.parent() {
                 fs::create_dir_all(parent)
                     .with_context(|| format!("Failed to create directory {:?}", parent))?;
             }
 
-            fs::write(&file_path, template.content)
-                .with_context(|| format!("Failed to write template file {:?}", file_path))?;
+            if !file_path.exists() {
+                fs::write(&file_path, template.content)
+                    .with_context(|| format!("Failed to write template file {:?}", file_path))?;
+            }
         }
 
-        println!("✓ Template created");
+        println!("✓ Template prepared");
         Ok(())
     }
 
-    /// Clone workspace from git repository
-    fn clone(&self, repository: &str) -> Result<()> {
+    fn clone_profile(&self, repository: &str, profile: &Profile) -> Result<()> {
         let url = Self::canonical_url(repository);
 
-        println!("Cloning repository: {}", url);
+        println!(
+            "Cloning repository {} into profile {:?}...",
+            url,
+            profile.name()
+        );
 
-        if let Some(parent) = self.profile.root().parent() {
-            fs::create_dir_all(parent).with_context(|| {
-                format!(
-                    "Failed to create parent directory for {:?}",
-                    self.profile.root()
-                )
-            })?;
+        fs::create_dir_all(&self.profiles_dir).with_context(|| {
+            format!(
+                "Failed to create profiles directory {:?}",
+                self.profiles_dir
+            )
+        })?;
+
+        if profile.root().exists() {
+            anyhow::bail!(
+                "Profile '{}' already exists at {:?}",
+                profile.name(),
+                profile.root()
+            );
         }
 
-        git2::Repository::clone(&url, self.profile.root()).with_context(|| {
-            format!(
-                "Failed to clone repository {} to {:?}",
-                url,
-                self.profile.root()
-            )
+        git2::Repository::clone(&url, profile.root()).with_context(|| {
+            format!("Failed to clone repository {} to {:?}", url, profile.root())
         })?;
 
         println!("✓ Repository cloned");
@@ -412,8 +536,8 @@ impl Workspace {
         Ok(())
     }
 
-    /// Get the Config for managing dotfiles
-    pub fn config(&self) -> Result<Config> {
+    /// Get the dotfile manager for the active profile
+    pub fn dotfiles(&self) -> Result<Dotfiles> {
         let config_dir = self.path(WorkspacePath::Config);
 
         // Target is $XDG_CONFIG_HOME (default: ~/.config)
@@ -426,7 +550,7 @@ impl Workspace {
                     .join(".config")
             });
 
-        Ok(Config::new(config_dir, target_dir))
+        Ok(Dotfiles::new(config_dir, target_dir))
     }
 
     /// Get the Environment for shell integration
@@ -486,8 +610,8 @@ impl Workspace {
         };
 
         // Install config entries and record in lockfile
-        let config = self.config()?;
-        let config_entries = config.discover_entries()?;
+        let dotfiles = self.dotfiles()?;
+        let config_entries = dotfiles.discover_entries()?;
 
         for entry in &config_entries {
             entry.install()?;
@@ -678,6 +802,7 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::default_profile_name;
     use crate::manifest::InstallerKind;
     use rstest::rstest;
     use serial_test::serial;
@@ -698,14 +823,15 @@ mod tests {
         let _temp = setup_test_env();
         let workspace = Workspace::new().unwrap();
 
-        assert!(workspace.workspace_dir.to_string_lossy().contains("dws"));
-        assert!(workspace.state_dir.to_string_lossy().contains("dws"));
-        assert!(workspace.cache_dir.to_string_lossy().contains("dws"));
         assert!(workspace
-            .profile()
-            .root()
+            .path(WorkspacePath::Root)
             .to_string_lossy()
-            .contains("profile"));
+            .contains("dws"));
+        assert!(workspace
+            .path(WorkspacePath::Profile)
+            .to_string_lossy()
+            .contains("profiles"));
+        assert_eq!(workspace.active_profile_name(), default_profile_name());
     }
 
     #[test]
@@ -715,9 +841,9 @@ mod tests {
         let workspace = Workspace::new().unwrap();
 
         assert!(workspace
-            .path(WorkspacePath::Profile)
+            .path(WorkspacePath::Profiles)
             .to_string_lossy()
-            .contains("profile"));
+            .contains("profiles"));
         assert!(workspace
             .path(WorkspacePath::Config)
             .to_string_lossy()
@@ -836,11 +962,11 @@ project = "BurntSushi/ripgrep"
     #[serial]
     fn test_init_new_workspace_without_url() {
         let _temp = setup_test_env();
-        let workspace = Workspace::new().unwrap();
+        let mut workspace = Workspace::new().unwrap();
 
         assert!(!workspace.path(WorkspacePath::Profile).exists());
 
-        workspace.init(None, "zsh").unwrap();
+        workspace.init(None, "zsh", None).unwrap();
 
         assert!(workspace.path(WorkspacePath::Profile).exists());
         assert!(workspace.path(WorkspacePath::Config).exists());
@@ -859,7 +985,7 @@ project = "BurntSushi/ripgrep"
     #[serial]
     fn test_init_new_workspace_with_url() {
         let _temp = setup_test_env();
-        let workspace = Workspace::new().unwrap();
+        let mut workspace = Workspace::new().unwrap();
 
         let source_temp = TempDir::new().unwrap();
         let source_repo_path = source_temp.path().join("test-repo");
@@ -880,7 +1006,7 @@ project = "BurntSushi/ripgrep"
         assert!(!workspace.path(WorkspacePath::Profile).exists());
 
         let repo_url = format!("file://{}", source_repo_path.display());
-        workspace.init(Some(&repo_url), "bash").unwrap();
+        workspace.init(Some(&repo_url), "bash", None).unwrap();
 
         assert!(workspace.path(WorkspacePath::Profile).exists());
         assert!(workspace
@@ -893,12 +1019,14 @@ project = "BurntSushi/ripgrep"
     #[serial]
     fn test_init_existing_workspace_without_url() {
         let _temp = setup_test_env();
-        let workspace = Workspace::new().unwrap();
+        let mut workspace = Workspace::new().unwrap();
 
-        workspace.create().unwrap();
+        workspace
+            .ensure_profile_template(workspace.active_profile())
+            .unwrap();
         assert!(workspace.path(WorkspacePath::Profile).exists());
 
-        let result = workspace.init(None, "bash");
+        let result = workspace.init(None, "bash", None);
 
         assert!(result.is_ok());
         assert!(workspace.path(WorkspacePath::Profile).exists());
@@ -908,39 +1036,45 @@ project = "BurntSushi/ripgrep"
     #[serial]
     fn test_init_existing_workspace_with_matching_url() {
         let _temp = setup_test_env();
-        let workspace = Workspace::new().unwrap();
+        let mut workspace = Workspace::new().unwrap();
 
         let source_temp = TempDir::new().unwrap();
         let source_repo_path = source_temp.path().join("test-repo");
         git2::Repository::init(&source_repo_path).unwrap();
 
         let repo_url = format!("file://{}", source_repo_path.display());
-        workspace.clone(&repo_url).unwrap();
-        assert!(workspace.path(WorkspacePath::Profile).exists());
+        let profile_name = workspace.clone_into_profile(&repo_url, None).unwrap();
+        let profile_root = workspace.path(WorkspacePath::Profiles).join(&profile_name);
+        assert!(profile_root.exists());
 
-        let result = workspace.init(Some(&repo_url), "zsh");
+        let result = workspace.init(Some(repo_url.as_str()), "zsh", Some(profile_name.as_str()));
         assert!(result.is_ok());
+        assert_eq!(workspace.active_profile_name(), profile_name.as_str());
     }
 
     #[test]
     #[serial]
     fn test_init_existing_workspace_with_mismatched_url() {
         let _temp = setup_test_env();
-        let workspace = Workspace::new().unwrap();
+        let mut workspace = Workspace::new().unwrap();
 
+        let initial_active = workspace.active_profile_name().to_string();
         let source_temp = TempDir::new().unwrap();
         let source_repo_path = source_temp.path().join("test-repo");
         git2::Repository::init(&source_repo_path).unwrap();
 
         let repo_url = format!("file://{}", source_repo_path.display());
-        workspace.clone(&repo_url).unwrap();
+        let profile_name = workspace.clone_into_profile(&repo_url, None).unwrap();
+        let profile_root = workspace.path(WorkspacePath::Profiles).join(&profile_name);
+        assert!(profile_root.exists());
 
         let different_url = "file:///different/repo";
-        let result = workspace.init(Some(different_url), "zsh");
+        let result = workspace.init(Some(different_url), "zsh", Some(profile_name.as_str()));
 
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("mismatch"));
+        assert_eq!(workspace.active_profile_name(), initial_active);
     }
 
     /// Test canonical URL normalization
@@ -981,7 +1115,9 @@ project = "BurntSushi/ripgrep"
 
         assert!(!workspace.path(WorkspacePath::Profile).exists());
 
-        workspace.create().unwrap();
+        workspace
+            .ensure_profile_template(workspace.active_profile())
+            .unwrap();
 
         assert!(workspace.path(WorkspacePath::Profile).exists());
         assert!(workspace
@@ -1040,17 +1176,19 @@ project = "BurntSushi/ripgrep"
         repo.commit(Some("HEAD"), &sig, &sig, "Initial commit", &tree, &[])
             .unwrap();
 
-        assert!(!workspace.path(WorkspacePath::Profile).exists());
+        assert!(!workspace
+            .path(WorkspacePath::Profiles)
+            .join("test-repo")
+            .exists());
 
         let repo_url = format!("file://{}", source_repo_path.display());
-        workspace.clone(&repo_url).unwrap();
+        let name = workspace.clone_into_profile(&repo_url, None).unwrap();
+        assert_eq!(name, "test-repo");
 
-        assert!(workspace.path(WorkspacePath::Profile).exists());
-        assert!(workspace
-            .path(WorkspacePath::Profile)
-            .join("test.txt")
-            .exists());
-        assert!(workspace.path(WorkspacePath::Profile).join(".git").exists());
+        let cloned_root = workspace.path(WorkspacePath::Profiles).join(&name);
+        assert!(cloned_root.exists());
+        assert!(cloned_root.join("test.txt").exists());
+        assert!(cloned_root.join(".git").exists());
     }
 
     #[test]
@@ -1064,9 +1202,13 @@ project = "BurntSushi/ripgrep"
         git2::Repository::init(&source_repo_path).unwrap();
 
         let repo_url = format!("file://{}", source_repo_path.display());
-        workspace.clone(&repo_url).unwrap();
+        let name = workspace.clone_into_profile(&repo_url, None).unwrap();
+        let profile = Profile::new(
+            name.clone(),
+            workspace.path(WorkspacePath::Profiles).join(&name),
+        );
 
-        let result = workspace.verify_url(&repo_url);
+        let result = Workspace::verify_profile_repo(&profile, &repo_url);
         assert!(result.is_ok());
     }
 
@@ -1081,10 +1223,14 @@ project = "BurntSushi/ripgrep"
         git2::Repository::init(&source_repo_path).unwrap();
 
         let repo_url = format!("file://{}", source_repo_path.display());
-        workspace.clone(&repo_url).unwrap();
+        let name = workspace.clone_into_profile(&repo_url, None).unwrap();
+        let profile = Profile::new(
+            name.clone(),
+            workspace.path(WorkspacePath::Profiles).join(&name),
+        );
 
         let different_url = "file:///different/path";
-        let result = workspace.verify_url(different_url);
+        let result = Workspace::verify_profile_repo(&profile, different_url);
 
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();

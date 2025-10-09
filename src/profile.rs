@@ -2,12 +2,20 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct Profile {
+    name: String,
     root: PathBuf,
 }
 
 impl Profile {
-    pub fn new(root: PathBuf) -> Self {
-        Self { root }
+    pub fn new(name: impl Into<String>, root: PathBuf) -> Self {
+        Self {
+            name: name.into(),
+            root,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     pub fn root(&self) -> &Path {

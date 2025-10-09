@@ -6,17 +6,12 @@
 
 ```
 ~/.config/dws/                # dws workspace root (reserved for tooling)
-  profile/                    # User profile repository (git)
-    config/                   # XDG config files → symlinked to ~/.config
-      zsh/
-        .zshrc
-      nvim/
-        init.lua
-    manifests/
-      tools.toml              # Base tool definitions
-      tools-<platform>.toml   # Platform overlays (e.g. tools-macos.toml)
-      tools-<hostname>.toml   # Host overrides (optional)
-    README.md
+  config.toml                 # Workspace configuration (active profile, etc.)
+  profiles/                   # User profile repositories (git)
+    <profile>/
+      config/                 # XDG config files → symlinked to ~/.config
+      manifests/              # Tool definitions
+      README.md
 
 ~/.local/state/dws/           # XDG_STATE_HOME (local execution state)
   dws.lock                    # Lockfile tracking installed state
@@ -35,11 +30,11 @@
 1. **XDG-only approach**: dws is purpose-built for XDG Base Directory layout
    - Config files symlink to `$XDG_CONFIG_HOME` (default: `~/.config`)
    - No support for dotfiles in home directory root
-   - Structure mirrors XDG: `dws/profile/config/zsh/.zshrc` → `~/.config/zsh/.zshrc`
-2. **Profile model**: user content lives under `~/.config/dws/profile`
-   - Exactly one profile per machine/container today (future-ready for multi-profile)
-   - `profile/` is version-controlled by the user; `~/.config/dws` is reserved for dws metadata
-   - Different environments = different machines/containers
+   - Structure mirrors XDG: `dws/profiles/<profile>/config/zsh/.zshrc` → `~/.config/zsh/.zshrc`
+2. **Profile model**: user content lives under `~/.config/dws/profiles/<profile>`
+   - Profiles are version-controlled by the user; the workspace root holds metadata only
+   - `config.toml` records the active profile so `dws use <profile>` can switch safely
+   - Different environments = different machines/containers (multi-profile ready)
 3. **Separation of concerns**:
    - `~/.config/dws`: Source of truth (version controlled)
    - `~/.local/state/dws`: Execution state (local, not in git)
@@ -53,6 +48,7 @@
 6. **Version pinning**: Manifests can pin versions, `update` respects pins
 7. **Manifest override precedence**: `tools.toml` defines base defaults → platform manifests (e.g. `tools-macos.toml`) override base → host manifests (`tools-<hostname>.toml`) override platform; each layer only touches the fields it needs.
 8. **Wrapper scripts only when needed**: For tools requiring LD_LIBRARY_PATH, etc.
+9. **Profile management commands**: `dws clone`, `dws use`, and `dws profiles` manage the lifecycle of profiles under `profiles/`.
 
 ## CLI Commands
 
@@ -66,6 +62,11 @@ dws init [repository]            # Initialize workspace (auto-detects shell from
 dws sync                         # Pull changes, reinstall configs/tools
 dws update [tool]                # Update tools (respect pins, show newer)
 dws status                       # Show workspace status
+dws profiles                     # List profiles (active profile marked)
+dws use <profile>                # Switch to another profile
+
+# Profile management
+dws clone <repo> [--profile name] # Clone additional profile into profiles/
 
 # Maintenance
 dws reset                        # Clean git state + reinstall everything
@@ -109,11 +110,11 @@ installed_at = "2025-10-07T12:34:56.789Z"
 # ~/.local/state/dws/dws.lock (example excerpt)
 
 [[config_symlinks]]
-source = "/Users/user/.config/dws/profile/config/zsh/.zshrc"
+source = "/Users/user/.config/dws/profiles/default/config/zsh/.zshrc"
 target = "/Users/user/.config/zsh/.zshrc"
 
 [[config_symlinks]]
-source = "/Users/user/.config/dws/profile/config/nvim/init.lua"
+source = "/Users/user/.config/dws/profiles/default/config/nvim/init.lua"
 target = "/Users/user/.config/nvim/init.lua"
 
 [[tool_symlinks]]
@@ -139,7 +140,7 @@ target = "/Users/user/.local/state/dws/bin/fd"
 ## Manifest Format
 
 ```toml
-# ~/.config/dws/profile/manifests/tools.toml
+# ~/.config/dws/profiles/<profile>/manifests/tools.toml
 
 [ripgrep]
 installer = "ubi"

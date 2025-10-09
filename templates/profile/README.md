@@ -5,22 +5,24 @@ This workspace was created by dws (Developer Workspace).
 ## Structure
 
 ```
-$XDG_CONFIG_HOME/dws/            # dws workspace root (reserved)
-  profile/                       # Your profile repository (version controlled)
-    config/                      # XDG config files → symlinked to $XDG_CONFIG_HOME
-      zsh/
-        .zshrc
-      bash/
-        .bashrc
-      fish/
-        config.fish
-      nvim/
-        init.lua
-    manifests/
-      tools.toml                 # Base tool definitions (all machines)
-      tools-macos.toml           # Platform overrides (optional, per OS)
-      tools-<hostname>.toml      # Host overrides (optional, per machine)
-    README.md
+$XDG_CONFIG_HOME/dws/             # dws workspace root (reserved)
+  config.toml                     # Workspace configuration (active profile, etc.)
+  profiles/                       # Your profile repositories (version controlled)
+    <profile>/                    # e.g., default, personal, work
+      config/                     # XDG config files → symlinked to $XDG_CONFIG_HOME
+        zsh/
+          .zshrc
+        bash/
+          .bashrc
+        fish/
+          config.fish
+        nvim/
+          init.lua
+      manifests/
+        tools.toml                # Base tool definitions (all machines)
+        tools-macos.toml          # Platform overrides (optional, per OS)
+        tools-<hostname>.toml     # Host overrides (optional, per machine)
+      README.md
 ```
 
 ## Publishing to GitHub
@@ -28,7 +30,7 @@ $XDG_CONFIG_HOME/dws/            # dws workspace root (reserved)
 To share this workspace across machines:
 
 ```bash
-cd $XDG_CONFIG_HOME/dws/profile
+cd $XDG_CONFIG_HOME/dws/profiles/<profile>
 git init
 git add .
 git commit -m "Initial dws workspace"
@@ -43,10 +45,16 @@ dws init yourusername/dotfiles
 
 ## Customizing
 
-1. Add your dotfiles to `profile/config/` (e.g., `profile/config/zsh/.zshrc`)
-2. Edit manifests under `profile/manifests/` to include your preferred tools
+1. Add your dotfiles to `profiles/<profile>/config/` (e.g., `profiles/default/config/zsh/.zshrc`)
+2. Edit manifests under `profiles/<profile>/manifests/` to include your preferred tools
 3. Commit and push changes
 4. Run `dws sync` on other machines to pull updates
+
+### Managing profiles
+
+- `dws profiles` lists all available profiles and marks the active one.
+- `dws clone <repo> [--profile name]` clones another profile into `profiles/<name>` without activating it.
+- `dws use <profile>` switches the active profile (updates symlinks and `config.toml`).
 
 ## Writing Manifests
 

@@ -30,7 +30,32 @@ pub enum Commands {
         /// Shell type (auto-detects from $SHELL if not specified)
         #[arg(short, long, value_name = "SHELL")]
         shell: Option<String>,
+
+        /// Profile name (defaults to active profile or repository slug)
+        #[arg(short, long, value_name = "PROFILE")]
+        profile: Option<String>,
     },
+
+    /// Clone a profile repository without activating it
+    Clone {
+        /// Git repository URL or GitHub shorthand (user/repo) to clone
+        #[arg(value_name = "REPOSITORY")]
+        repository: String,
+
+        /// Profile name (defaults to repository slug)
+        #[arg(short, long, value_name = "PROFILE")]
+        profile: Option<String>,
+    },
+
+    /// Switch to a different profile
+    Use {
+        /// Profile name to activate
+        #[arg(value_name = "PROFILE")]
+        profile: String,
+    },
+
+    /// List available profiles
+    Profiles,
 
     /// Sync workspace (git pull + reinstall configs/tools)
     Sync,

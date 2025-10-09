@@ -23,16 +23,17 @@ fn detect_shell() -> Result<String> {
 }
 
 pub fn execute(
-    workspace: &Workspace,
+    workspace: &mut Workspace,
     repository: Option<String>,
     shell: Option<String>,
+    profile: Option<String>,
 ) -> Result<()> {
     let shell = match shell {
         Some(s) => s,
         None => detect_shell()?,
     };
 
-    workspace.init(repository.as_deref(), &shell)?;
+    workspace.init(repository.as_deref(), &shell, profile.as_deref())?;
 
     Ok(())
 }
