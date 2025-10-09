@@ -534,6 +534,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "ubi",
+ "walkdir",
  "whoami",
 ]
 

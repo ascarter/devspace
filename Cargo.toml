@@ -23,6 +23,7 @@ git2 = { version = "0.19", features = ["vendored-openssl"] }
 whoami = "1.5"
 tokio = { version = "1.40", features = ["rt", "rt-multi-thread"] }
 ubi = { version = "0.7", default-features = false, features = ["rustls-tls"] }
+walkdir = "2.5"
 
 [dev-dependencies]
 assert_cmd = "2.0"

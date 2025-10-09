@@ -1,15 +1,14 @@
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result};
 use std::env;
 use std::fs;
-use std::os::unix::fs::symlink;
 use std::path::PathBuf;
 
 use crate::config::Config;
 use crate::environment::{Environment, Shell};
+use crate::installers::{self, InstallContext, ToolInstaller};
 use crate::lockfile::Lockfile;
-use crate::manifest::{InstallerKind, ManifestEntry, ManifestSet};
+use crate::manifest::ManifestSet;
 use tokio::runtime::Runtime;
-use ubi::UbiBuilder;
 
 /// Template file definition for workspace initialization
 struct TemplateFile {
@@ -80,7 +79,6 @@ pub enum WorkspacePath {
 /// Workspace - represents the dws installation
 ///
 /// The workspace is rooted at $XDG_CONFIG_HOME/dws and represents your dotfiles.
-/// No profiles, no switching - this IS your environment.
 #[derive(Debug)]
 pub struct Workspace {
     /// Workspace root: $XDG_CONFIG_HOME/dws (version controlled)
@@ -463,30 +461,34 @@ impl Workspace {
             lockfile.add_config_symlink(entry.source.clone(), entry.target.clone());
         }
 
-        let mut runtime = if manifests
+        let install_context = InstallContext {
+            cache_apps_dir: cache_apps_dir.clone(),
+            bin_dir: bin_dir.clone(),
+        };
+
+        let mut installers: Vec<Box<dyn ToolInstaller>> = Vec::new();
+
+        for entry in manifests.iter() {
+            match installers::create_installer(entry, install_context.clone())? {
+                Some(installer) => installers.push(installer),
+                None => println!(
+                    "Skipping tool '{}' - installer '{}' is not yet supported",
+                    entry.name, entry.definition.installer
+                ),
+            }
+        }
+
+        let mut runtime = if installers
             .iter()
-            .any(|entry| matches!(entry.definition.installer, InstallerKind::Ubi))
+            .any(|installer| installer.requires_runtime())
         {
             Some(Runtime::new().context("Failed to create Tokio runtime")?)
         } else {
             None
         };
 
-        for entry in manifests.iter() {
-            match entry.definition.installer {
-                InstallerKind::Ubi => {
-                    let rt = runtime
-                        .as_mut()
-                        .expect("Runtime should exist when UBI entries are present");
-                    self.install_tool_with_ubi(entry, &mut lockfile, rt)?;
-                }
-                other => {
-                    println!(
-                        "Skipping tool '{}' - installer '{}' is not yet supported",
-                        entry.name, other
-                    );
-                }
-            }
+        for installer in installers {
+            installer.install(runtime.as_mut(), &mut lockfile)?;
         }
 
         // Save lockfile
@@ -533,122 +535,6 @@ impl Workspace {
         }
 
         Ok(())
-    }
-
-    fn install_tool_with_ubi(
-        &self,
-        entry: &ManifestEntry,
-        lockfile: &mut Lockfile,
-        runtime: &mut Runtime,
-    ) -> Result<()> {
-        let definition = &entry.definition;
-
-        let project = definition.project.as_ref().ok_or_else(|| {
-            anyhow!(
-                "Tool '{}' must specify `project` when using the ubi installer",
-                entry.name
-            )
-        })?;
-
-        if definition.bin.is_empty() {
-            bail!(
-                "Tool '{}' must specify at least one `bin` entry when using the ubi installer",
-                entry.name
-            );
-        }
-
-        let version_label = definition
-            .version
-            .clone()
-            .unwrap_or_else(|| "latest".to_string());
-        let version_component = sanitize_component(&version_label);
-        let tool_component = sanitize_component(&entry.name);
-
-        let cache_apps_dir = self.path(WorkspacePath::Cache).join("apps");
-        let install_root = cache_apps_dir
-            .join(&tool_component)
-            .join(&version_component);
-        fs::create_dir_all(&install_root).with_context(|| {
-            format!(
-                "Failed to create ubi install directory {:?} for '{}'",
-                install_root, entry.name
-            )
-        })?;
-
-        let primary_bin = definition.bin.first().unwrap();
-
-        let mut builder = UbiBuilder::new()
-            .project(project)
-            .install_dir(&install_root)
-            .rename_exe_to(primary_bin);
-
-        if let Some(tag) = definition.version.as_deref() {
-            builder = builder.tag(tag);
-        }
-
-        let mut ubi = builder
-            .build()
-            .with_context(|| format!("Failed to configure ubi for '{}'", entry.name))?;
-
-        runtime.block_on(async {
-            ubi.install_binary()
-                .await
-                .with_context(|| format!("Failed to install '{}' via ubi", entry.name))
-        })?;
-
-        let installed_path = install_root.join(primary_bin);
-        if !installed_path.exists() {
-            return Err(anyhow!(
-                "Expected installed binary for '{}' at {:?} but it was not created",
-                entry.name,
-                installed_path
-            ));
-        }
-
-        let bin_dir = self.path(WorkspacePath::Bin);
-        fs::create_dir_all(&bin_dir)
-            .with_context(|| format!("Failed to create bin directory {:?}", bin_dir))?;
-
-        for bin_name in &definition.bin {
-            let target = bin_dir.join(bin_name);
-            if target.exists() || target.symlink_metadata().is_ok() {
-                fs::remove_file(&target).with_context(|| {
-                    format!("Failed to remove existing binary symlink {:?}", target)
-                })?;
-            }
-
-            symlink(&installed_path, &target).with_context(|| {
-                format!(
-                    "Failed to create symlink {:?} -> {:?}",
-                    target, installed_path
-                )
-            })?;
-
-            lockfile.add_tool_symlink(
-                entry.name.clone(),
-                version_label.clone(),
-                installed_path.clone(),
-                target,
-            );
-        }
-
-        Ok(())
-    }
-}
-
-fn sanitize_component(value: &str) -> String {
-    let mut result = String::with_capacity(value.len());
-    for ch in value.chars() {
-        match ch {
-            'a'..='z' | 'A'..='Z' | '0'..='9' | '.' | '-' | '_' => result.push(ch),
-            _ => result.push('-'),
-        }
-    }
-
-    if result.trim_matches('-').is_empty() {
-        "default".to_string()
-    } else {
-        result
     }
 }
 
@@ -795,15 +681,6 @@ project = "BurntSushi/ripgrep"
 
         // Verify lockfile removed
         assert!(!workspace.path(WorkspacePath::Lockfile).exists());
-    }
-
-    #[test]
-    fn test_sanitize_component() {
-        assert_eq!(sanitize_component("hello-world"), "hello-world");
-        assert_eq!(sanitize_component("Hello World!"), "Hello-World-");
-        assert_eq!(sanitize_component(""), "default");
-        assert_eq!(sanitize_component("///"), "default");
-        assert_eq!(sanitize_component("v1.2.3"), "v1.2.3");
     }
 
     #[test]

@@ -5,6 +5,7 @@ pub mod commands;
 // Core domain types
 mod config;
 mod environment;
+mod installers;
 mod lockfile;
 mod manifest;
 mod workspace;
