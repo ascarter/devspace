@@ -1,13 +1,15 @@
 use anyhow::{Context, Result};
+use std::collections::HashSet;
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::config::Config;
 use crate::environment::{Environment, Shell};
 use crate::installers::{self, InstallContext, ToolInstaller};
 use crate::lockfile::Lockfile;
 use crate::manifest::ManifestSet;
+use crate::profile::Profile;
 use tokio::runtime::Runtime;
 
 /// Template file definition for workspace initialization
@@ -24,35 +26,35 @@ struct TemplateFile {
 /// into the binary. To add a new template file, add it to this array.
 const TEMPLATE_FILES: &[TemplateFile] = &[
     TemplateFile {
-        path: ".dwsignore",
-        content: include_str!("../templates/profile/.dwsignore"),
+        path: "profile/config/.dwsignore",
+        content: include_str!("../templates/profile/config/.dwsignore"),
     },
     TemplateFile {
-        path: ".gitignore",
+        path: "profile/.gitignore",
         content: include_str!("../templates/profile/.gitignore"),
     },
     TemplateFile {
-        path: "README.md",
+        path: "profile/README.md",
         content: include_str!("../templates/profile/README.md"),
     },
     TemplateFile {
-        path: "manifests/tools.toml",
-        content: include_str!("../templates/profile/tools.toml"),
+        path: "profile/manifests/tools.toml",
+        content: include_str!("../templates/profile/manifests/tools.toml"),
     },
     TemplateFile {
-        path: "manifests/tools-macos.toml",
-        content: include_str!("../templates/profile/tools-macos.toml"),
+        path: "profile/manifests/tools-macos.toml",
+        content: include_str!("../templates/profile/manifests/tools-macos.toml"),
     },
     TemplateFile {
-        path: "config/zsh/.zshrc",
+        path: "profile/config/zsh/.zshrc",
         content: include_str!("../templates/profile/config/zsh/.zshrc"),
     },
     TemplateFile {
-        path: "config/bash/.bashrc",
+        path: "profile/config/bash/.bashrc",
         content: include_str!("../templates/profile/config/bash/.bashrc"),
     },
     TemplateFile {
-        path: "config/fish/config.fish",
+        path: "profile/config/fish/config.fish",
         content: include_str!("../templates/profile/config/fish/config.fish"),
     },
 ];
@@ -62,9 +64,11 @@ const TEMPLATE_FILES: &[TemplateFile] = &[
 pub enum WorkspacePath {
     /// Workspace root: $XDG_CONFIG_HOME/dws
     Root,
-    /// Config directory: workspace/config
+    /// Profile root: $XDG_CONFIG_HOME/dws/profile
+    Profile,
+    /// Config directory: workspace/profile/config
     Config,
-    /// Manifests directory: workspace/manifests
+    /// Manifests directory: workspace/profile/manifests
     Manifests,
     /// Bin directory: $XDG_STATE_HOME/dws/bin
     Bin,
@@ -87,6 +91,7 @@ pub struct Workspace {
     state_dir: PathBuf,
     /// Cache directory: $XDG_CACHE_HOME/dws (downloaded artifacts)
     cache_dir: PathBuf,
+    profile: Profile,
 }
 
 impl Workspace {
@@ -99,11 +104,13 @@ impl Workspace {
         let workspace_dir = Self::get_workspace_dir()?;
         let state_dir = Self::get_state_dir()?;
         let cache_dir = Self::get_cache_dir()?;
+        let profile = Profile::new(workspace_dir.join("profile"));
 
         Ok(Self {
             workspace_dir,
             state_dir,
             cache_dir,
+            profile,
         })
     }
 
@@ -153,8 +160,9 @@ impl Workspace {
     pub fn path(&self, path_type: WorkspacePath) -> PathBuf {
         match path_type {
             WorkspacePath::Root => self.workspace_dir.clone(),
-            WorkspacePath::Config => self.workspace_dir.join("config"),
-            WorkspacePath::Manifests => self.workspace_dir.join("manifests"),
+            WorkspacePath::Profile => self.profile.root().to_path_buf(),
+            WorkspacePath::Config => self.profile.config_dir(),
+            WorkspacePath::Manifests => self.profile.manifests_dir(),
             WorkspacePath::Bin => self.state_dir.join("bin"),
             WorkspacePath::Share => self.state_dir.join("share"),
             WorkspacePath::Lockfile => self.state_dir.join("dws.lock"),
@@ -164,12 +172,17 @@ impl Workspace {
 
     /// Check if workspace exists (has been initialized)
     pub fn exists(&self) -> bool {
-        self.workspace_dir.exists()
+        self.profile.root().exists()
+    }
+
+    /// Access the active profile
+    pub fn profile(&self) -> &Profile {
+        &self.profile
     }
 
     /// Initialize workspace and shell integration
     pub fn init(&self, repository: Option<&str>, shell: &str) -> Result<()> {
-        let exists = self.workspace_dir.exists();
+        let exists = self.profile.root().exists();
 
         match (exists, repository) {
             (false, None) => {
@@ -181,12 +194,12 @@ impl Workspace {
             }
 
             (true, None) => {
-                println!("Using existing workspace at {:?}", self.workspace_dir);
+                println!("Using existing workspace at {:?}", self.profile.root());
             }
 
             (true, Some(repo)) => {
                 self.verify_url(repo)?;
-                println!("Using existing workspace at {:?}", self.workspace_dir);
+                println!("Using existing workspace at {:?}", self.profile.root());
             }
         }
 
@@ -198,7 +211,7 @@ impl Workspace {
 
         println!("\n✓ Workspace initialized successfully!");
         println!("  Shell: {}", shell);
-        println!("  Config: {:?}", self.workspace_dir);
+        println!("  Profile: {:?}", self.profile.root());
         println!("\nRun 'exec $SHELL' to reload your shell.");
 
         Ok(())
@@ -208,8 +221,8 @@ impl Workspace {
     fn verify_url(&self, expected_repo: &str) -> Result<()> {
         let expected_url = Self::canonical_url(expected_repo);
 
-        let repo = git2::Repository::open(&self.workspace_dir)
-            .context("Workspace exists but is not a git repository")?;
+        let repo = git2::Repository::open(self.profile.root())
+            .context("Workspace exists but profile is not a git repository")?;
 
         let remote = repo
             .find_remote("origin")
@@ -226,7 +239,7 @@ impl Workspace {
                 "Workspace repository URL mismatch\n  Expected: {}\n  Actual:   {}\n\nThe workspace at {:?} was cloned from a different repository.",
                 expected_url,
                 actual_normalized,
-                self.workspace_dir
+                self.profile.root()
             );
         }
 
@@ -266,12 +279,22 @@ impl Workspace {
 
     /// Create workspace from template
     fn create(&self) -> Result<()> {
-        println!("Creating template workspace at {:?}...", self.workspace_dir);
+        println!(
+            "Creating template workspace at {:?}...",
+            self.profile.root()
+        );
 
         fs::create_dir_all(&self.workspace_dir).with_context(|| {
             format!(
                 "Failed to create workspace directory {:?}",
                 self.workspace_dir
+            )
+        })?;
+
+        fs::create_dir_all(self.profile.root()).with_context(|| {
+            format!(
+                "Failed to create profile directory {:?}",
+                self.profile.root()
             )
         })?;
 
@@ -297,10 +320,20 @@ impl Workspace {
 
         println!("Cloning repository: {}", url);
 
-        git2::Repository::clone(&url, &self.workspace_dir).with_context(|| {
+        if let Some(parent) = self.profile.root().parent() {
+            fs::create_dir_all(parent).with_context(|| {
+                format!(
+                    "Failed to create parent directory for {:?}",
+                    self.profile.root()
+                )
+            })?;
+        }
+
+        git2::Repository::clone(&url, self.profile.root()).with_context(|| {
             format!(
                 "Failed to clone repository {} to {:?}",
-                url, self.workspace_dir
+                url,
+                self.profile.root()
             )
         })?;
 
@@ -446,7 +479,7 @@ impl Workspace {
         let mut lockfile = if lockfile_path.exists() {
             // Cleanup existing installation first
             let old_lockfile = Lockfile::load(&lockfile_path)?;
-            self.cleanup(&old_lockfile)?;
+            self.remove_tracked_symlinks(&old_lockfile)?;
             Lockfile::new()
         } else {
             Lockfile::new()
@@ -491,13 +524,16 @@ impl Workspace {
             installer.install(runtime.as_mut(), &mut lockfile)?;
         }
 
+        self.prune_unused_bin(&lockfile)?;
+        self.prune_unused_cache(&lockfile)?;
+
         // Save lockfile
         lockfile.save(&lockfile_path)?;
 
         Ok(())
     }
 
-    /// Uninstall the workspace (remove all symlinks)
+    /// Uninstall the workspace
     pub fn uninstall(&self) -> Result<()> {
         let lockfile_path = self.path(WorkspacePath::Lockfile);
 
@@ -506,17 +542,29 @@ impl Workspace {
         }
 
         let lockfile = Lockfile::load(&lockfile_path)?;
-        self.cleanup(&lockfile)?;
+        self.remove_tracked_symlinks(&lockfile)?;
 
         // Remove lockfile
         fs::remove_file(&lockfile_path)
             .with_context(|| format!("Failed to remove lockfile {:?}", lockfile_path))?;
 
+        if self.state_dir.exists() {
+            fs::remove_dir_all(&self.state_dir).with_context(|| {
+                format!("Failed to remove state directory {:?}", self.state_dir)
+            })?;
+        }
+
+        if self.cache_dir.exists() {
+            fs::remove_dir_all(&self.cache_dir).with_context(|| {
+                format!("Failed to remove cache directory {:?}", self.cache_dir)
+            })?;
+        }
+
         Ok(())
     }
 
     /// Remove all symlinks tracked in the lockfile
-    fn cleanup(&self, lockfile: &Lockfile) -> Result<()> {
+    fn remove_tracked_symlinks(&self, lockfile: &Lockfile) -> Result<()> {
         // Remove config symlinks
         for entry in lockfile.config_symlinks() {
             if entry.target.exists() || entry.target.symlink_metadata().is_ok() {
@@ -531,6 +579,95 @@ impl Workspace {
             if entry.target.exists() || entry.target.symlink_metadata().is_ok() {
                 fs::remove_file(&entry.target)
                     .with_context(|| format!("Failed to remove tool symlink {:?}", entry.target))?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Remove cached tool versions that no longer have symlinks tracked in the lockfile.
+    ///
+    /// The cache is organised as $XDG_CACHE_HOME/dws/apps/<tool>/<version>. The lockfile stores the
+    /// fully qualified path to the version directory. Anything not referenced gets pruned.
+    fn prune_unused_cache(&self, lockfile: &Lockfile) -> Result<()> {
+        let apps_dir = self.path(WorkspacePath::Cache).join("apps");
+        if !apps_dir.exists() {
+            return Ok(());
+        }
+
+        let in_use: HashSet<PathBuf> = lockfile
+            .tool_symlinks()
+            .filter_map(|entry| entry.source.parent().map(Path::to_path_buf))
+            .collect();
+
+        for tool_entry in fs::read_dir(&apps_dir)
+            .with_context(|| format!("Failed to read cache directory {:?}", apps_dir))?
+        {
+            let tool_entry = tool_entry?;
+            let tool_path = tool_entry.path();
+            if !tool_path.is_dir() {
+                continue;
+            }
+
+            for version_entry in fs::read_dir(&tool_path)? {
+                let version_entry = version_entry?;
+                let version_path = version_entry.path();
+                if !version_path.is_dir() {
+                    continue;
+                }
+
+                if !in_use.contains(&version_path) {
+                    fs::remove_dir_all(&version_path).with_context(|| {
+                        format!("Failed to remove cached tool at {:?}", version_path)
+                    })?;
+                }
+            }
+
+            if !tool_path.exists() {
+                continue;
+            }
+
+            if tool_path.read_dir()?.next().is_none() {
+                fs::remove_dir(&tool_path).with_context(|| {
+                    format!("Failed to remove empty cache directory {:?}", tool_path)
+                })?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Remove stale symlinks from $XDG_STATE_HOME/dws/bin when they are no longer listed in the
+    /// lockfile. Only symlinks are touched; any user-managed files remain untouched.
+    fn prune_unused_bin(&self, lockfile: &Lockfile) -> Result<()> {
+        let bin_dir = self.path(WorkspacePath::Bin);
+        if !bin_dir.exists() {
+            return Ok(());
+        }
+
+        let valid: HashSet<PathBuf> = lockfile
+            .tool_symlinks()
+            .map(|entry| entry.target.clone())
+            .collect();
+
+        for entry in fs::read_dir(&bin_dir)
+            .with_context(|| format!("Failed to read bin directory {:?}", bin_dir))?
+        {
+            let entry = entry?;
+            let target = entry.path();
+
+            if valid.contains(&target) {
+                continue;
+            }
+
+            if target
+                .symlink_metadata()
+                .map(|metadata| metadata.file_type().is_symlink())
+                .unwrap_or(false)
+            {
+                fs::remove_file(&target).with_context(|| {
+                    format!("Failed to remove stale binary symlink {:?}", target)
+                })?;
             }
         }
 
@@ -564,6 +701,11 @@ mod tests {
         assert!(workspace.workspace_dir.to_string_lossy().contains("dws"));
         assert!(workspace.state_dir.to_string_lossy().contains("dws"));
         assert!(workspace.cache_dir.to_string_lossy().contains("dws"));
+        assert!(workspace
+            .profile()
+            .root()
+            .to_string_lossy()
+            .contains("profile"));
     }
 
     #[test]
@@ -572,6 +714,10 @@ mod tests {
         let _temp = setup_test_env();
         let workspace = Workspace::new().unwrap();
 
+        assert!(workspace
+            .path(WorkspacePath::Profile)
+            .to_string_lossy()
+            .contains("profile"));
         assert!(workspace
             .path(WorkspacePath::Config)
             .to_string_lossy()
@@ -681,6 +827,9 @@ project = "BurntSushi/ripgrep"
 
         // Verify lockfile removed
         assert!(!workspace.path(WorkspacePath::Lockfile).exists());
+        assert!(!workspace.path(WorkspacePath::Bin).exists());
+        assert!(!workspace.path(WorkspacePath::Share).exists());
+        assert!(!workspace.path(WorkspacePath::Cache).exists());
     }
 
     #[test]
@@ -689,18 +838,21 @@ project = "BurntSushi/ripgrep"
         let _temp = setup_test_env();
         let workspace = Workspace::new().unwrap();
 
-        assert!(!workspace.workspace_dir.exists());
+        assert!(!workspace.path(WorkspacePath::Profile).exists());
 
         workspace.init(None, "zsh").unwrap();
 
-        assert!(workspace.workspace_dir.exists());
+        assert!(workspace.path(WorkspacePath::Profile).exists());
         assert!(workspace.path(WorkspacePath::Config).exists());
         assert!(workspace.path(WorkspacePath::Manifests).exists());
         assert!(workspace
             .path(WorkspacePath::Config)
             .join("zsh/.zshrc")
             .exists());
-        assert!(workspace.workspace_dir.join("README.md").exists());
+        assert!(workspace
+            .path(WorkspacePath::Profile)
+            .join("README.md")
+            .exists());
     }
 
     #[test]
@@ -725,13 +877,16 @@ project = "BurntSushi/ripgrep"
         repo.commit(Some("HEAD"), &sig, &sig, "Initial commit", &tree, &[])
             .unwrap();
 
-        assert!(!workspace.workspace_dir.exists());
+        assert!(!workspace.path(WorkspacePath::Profile).exists());
 
         let repo_url = format!("file://{}", source_repo_path.display());
         workspace.init(Some(&repo_url), "bash").unwrap();
 
-        assert!(workspace.workspace_dir.exists());
-        assert!(workspace.workspace_dir.join("README.md").exists());
+        assert!(workspace.path(WorkspacePath::Profile).exists());
+        assert!(workspace
+            .path(WorkspacePath::Profile)
+            .join("README.md")
+            .exists());
     }
 
     #[test]
@@ -741,12 +896,12 @@ project = "BurntSushi/ripgrep"
         let workspace = Workspace::new().unwrap();
 
         workspace.create().unwrap();
-        assert!(workspace.workspace_dir.exists());
+        assert!(workspace.path(WorkspacePath::Profile).exists());
 
         let result = workspace.init(None, "bash");
 
         assert!(result.is_ok());
-        assert!(workspace.workspace_dir.exists());
+        assert!(workspace.path(WorkspacePath::Profile).exists());
     }
 
     #[test]
@@ -761,7 +916,7 @@ project = "BurntSushi/ripgrep"
 
         let repo_url = format!("file://{}", source_repo_path.display());
         workspace.clone(&repo_url).unwrap();
-        assert!(workspace.workspace_dir.exists());
+        assert!(workspace.path(WorkspacePath::Profile).exists());
 
         let result = workspace.init(Some(&repo_url), "zsh");
         assert!(result.is_ok());
@@ -824,14 +979,23 @@ project = "BurntSushi/ripgrep"
         let _temp = setup_test_env();
         let workspace = Workspace::new().unwrap();
 
-        assert!(!workspace.workspace_dir.exists());
+        assert!(!workspace.path(WorkspacePath::Profile).exists());
 
         workspace.create().unwrap();
 
-        assert!(workspace.workspace_dir.exists());
-        assert!(workspace.workspace_dir.join("README.md").exists());
-        assert!(workspace.workspace_dir.join(".gitignore").exists());
-        assert!(workspace.workspace_dir.join(".dwsignore").exists());
+        assert!(workspace.path(WorkspacePath::Profile).exists());
+        assert!(workspace
+            .path(WorkspacePath::Profile)
+            .join("README.md")
+            .exists());
+        assert!(workspace
+            .path(WorkspacePath::Profile)
+            .join(".gitignore")
+            .exists());
+        assert!(workspace
+            .path(WorkspacePath::Config)
+            .join(".dwsignore")
+            .exists());
         assert!(workspace
             .path(WorkspacePath::Config)
             .join("zsh/.zshrc")
@@ -876,14 +1040,17 @@ project = "BurntSushi/ripgrep"
         repo.commit(Some("HEAD"), &sig, &sig, "Initial commit", &tree, &[])
             .unwrap();
 
-        assert!(!workspace.workspace_dir.exists());
+        assert!(!workspace.path(WorkspacePath::Profile).exists());
 
         let repo_url = format!("file://{}", source_repo_path.display());
         workspace.clone(&repo_url).unwrap();
 
-        assert!(workspace.workspace_dir.exists());
-        assert!(workspace.workspace_dir.join("test.txt").exists());
-        assert!(workspace.workspace_dir.join(".git").exists());
+        assert!(workspace.path(WorkspacePath::Profile).exists());
+        assert!(workspace
+            .path(WorkspacePath::Profile)
+            .join("test.txt")
+            .exists());
+        assert!(workspace.path(WorkspacePath::Profile).join(".git").exists());
     }
 
     #[test]

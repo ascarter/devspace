@@ -5,21 +5,22 @@ This workspace was created by dws (Developer Workspace).
 ## Structure
 
 ```
-$XDG_CONFIG_HOME/dws/            # Your dotfiles repo (version controlled)
-  config/                        # XDG config files → symlinked to $XDG_CONFIG_HOME
-    zsh/
-      .zshrc
-    bash/
-      .bashrc
-    fish/
-      config.fish
-    nvim/
-      init.lua
-  manifests/
-    tools.toml                   # Base tool definitions (all machines)
-    tools-macos.toml             # Platform overrides (optional, per OS)
-    tools-<hostname>.toml        # Host overrides (optional, per machine)
-  README.md
+$XDG_CONFIG_HOME/dws/            # dws workspace root (reserved)
+  profile/                       # Your profile repository (version controlled)
+    config/                      # XDG config files → symlinked to $XDG_CONFIG_HOME
+      zsh/
+        .zshrc
+      bash/
+        .bashrc
+      fish/
+        config.fish
+      nvim/
+        init.lua
+    manifests/
+      tools.toml                 # Base tool definitions (all machines)
+      tools-macos.toml           # Platform overrides (optional, per OS)
+      tools-<hostname>.toml      # Host overrides (optional, per machine)
+    README.md
 ```
 
 ## Publishing to GitHub
@@ -27,7 +28,7 @@ $XDG_CONFIG_HOME/dws/            # Your dotfiles repo (version controlled)
 To share this workspace across machines:
 
 ```bash
-cd $XDG_CONFIG_HOME/dev
+cd $XDG_CONFIG_HOME/dws/profile
 git init
 git add .
 git commit -m "Initial dws workspace"
@@ -42,8 +43,8 @@ dws init yourusername/dotfiles
 
 ## Customizing
 
-1. Add your dotfiles to `config/` (e.g., `config/zsh/.zshrc`, `config/nvim/init.lua`)
-2. Edit manifests to include your preferred tools
+1. Add your dotfiles to `profile/config/` (e.g., `profile/config/zsh/.zshrc`)
+2. Edit manifests under `profile/manifests/` to include your preferred tools
 3. Commit and push changes
 4. Run `dws sync` on other machines to pull updates
 

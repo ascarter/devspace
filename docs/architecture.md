@@ -5,17 +5,18 @@
 ### Directory Structure
 
 ```
-~/.config/dws/                # Your dotfiles repo (version controlled)
-  config/                     # XDG config files → symlinked to ~/.config
-    zsh/
-      .zshrc
-    nvim/
-      init.lua
-  manifests/
-    tools.toml                # Base tool definitions
-    tools-<platform>.toml     # Platform overlays (e.g. tools-macos.toml)
-    tools-<hostname>.toml     # Host overrides (optional)
-  README.md
+~/.config/dws/                # dws workspace root (reserved for tooling)
+  profile/                    # User profile repository (git)
+    config/                   # XDG config files → symlinked to ~/.config
+      zsh/
+        .zshrc
+      nvim/
+        init.lua
+    manifests/
+      tools.toml              # Base tool definitions
+      tools-<platform>.toml   # Platform overlays (e.g. tools-macos.toml)
+      tools-<hostname>.toml   # Host overrides (optional)
+    README.md
 
 ~/.local/state/dws/           # XDG_STATE_HOME (local execution state)
   dws.lock                    # Lockfile tracking installed state
@@ -34,10 +35,10 @@
 1. **XDG-only approach**: dws is purpose-built for XDG Base Directory layout
    - Config files symlink to `$XDG_CONFIG_HOME` (default: `~/.config`)
    - No support for dotfiles in home directory root
-   - Structure mirrors XDG: `dws/config/zsh/.zshrc` → `~/.config/zsh/.zshrc`
-2. **Single workspace model**: `~/.config/dws` IS your dotfiles repo
-   - No "profiles" - one workspace per machine/container
-   - Version controlled (git repo)
+   - Structure mirrors XDG: `dws/profile/config/zsh/.zshrc` → `~/.config/zsh/.zshrc`
+2. **Profile model**: user content lives under `~/.config/dws/profile`
+   - Exactly one profile per machine/container today (future-ready for multi-profile)
+   - `profile/` is version-controlled by the user; `~/.config/dws` is reserved for dws metadata
    - Different environments = different machines/containers
 3. **Separation of concerns**:
    - `~/.config/dws`: Source of truth (version controlled)
@@ -105,12 +106,14 @@ version = 1
 [metadata]
 installed_at = "2025-10-07T12:34:56.789Z"
 
+# ~/.local/state/dws/dws.lock (example excerpt)
+
 [[config_symlinks]]
-source = "/Users/user/.config/dws/config/zsh/.zshrc"
+source = "/Users/user/.config/dws/profile/config/zsh/.zshrc"
 target = "/Users/user/.config/zsh/.zshrc"
 
 [[config_symlinks]]
-source = "/Users/user/.config/dws/config/nvim/init.lua"
+source = "/Users/user/.config/dws/profile/config/nvim/init.lua"
 target = "/Users/user/.config/nvim/init.lua"
 
 [[tool_symlinks]]
@@ -136,7 +139,7 @@ target = "/Users/user/.local/state/dws/bin/fd"
 ## Manifest Format
 
 ```toml
-# ~/.config/dws/manifests/tools.toml
+# ~/.config/dws/profile/manifests/tools.toml
 
 [ripgrep]
 installer = "ubi"

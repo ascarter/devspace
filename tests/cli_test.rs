@@ -19,8 +19,9 @@ fn test_init_creates_template() {
 
     // Verify workspace was created
     assert!(temp.path().join("dws").exists());
-    assert!(temp.path().join("dws/README.md").exists());
-    assert!(temp.path().join("dws/config/zsh/.zshrc").exists());
+    assert!(temp.path().join("dws/profile").exists());
+    assert!(temp.path().join("dws/profile/README.md").exists());
+    assert!(temp.path().join("dws/profile/config/zsh/.zshrc").exists());
 }
 
 #[test]

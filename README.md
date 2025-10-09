@@ -68,24 +68,26 @@ dws cleanup
 ## Workspace Structure
 
 ```
-~/.config/dws/                 # Your dotfiles repo (version controlled)
-├── config/                    # XDG config files → symlinked to ~/.config
-│   ├── zsh/
-│   │   └── .zshrc
-│   ├── nvim/
-│   │   └── init.lua
-│   └── ...
-├── manifests/                 # Tool definitions
-│   ├── tools.toml            # Base tools applied everywhere
-│   ├── tools-macos.toml      # Platform overrides (optional)
-│   └── tools-<hostname>.toml # Host overrides (optional)
-└── README.md                  # Auto-generated
+~/.config/dws/                 # dws workspace root (reserved for tooling)
+├── profile/                   # User-managed profile (git repo)
+│   ├── config/                # XDG config files → symlinked to ~/.config
+│   │   ├── zsh/
+│   │   │   └── .zshrc
+│   │   ├── nvim/
+│   │   │   └── init.lua
+│   │   └── ...
+│   ├── manifests/             # Tool definitions
+│   │   ├── tools.toml         # Base tools applied everywhere
+│   │   ├── tools-macos.toml   # Platform overrides (optional)
+│   │   └── tools-<hostname>.toml # Host overrides (optional)
+│   └── README.md              # Auto-generated profile docs
+└── (future dws config)
 ```
 
 ### Example Manifest
 
 ```toml
-# manifests/tools.toml
+# profile/manifests/tools.toml
 [ripgrep]
 installer = "ubi"
 project = "BurntSushi/ripgrep"
