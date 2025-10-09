@@ -76,15 +76,16 @@ dws cleanup
 │   │   └── init.lua
 │   └── ...
 ├── manifests/                 # Tool definitions
-│   ├── cli.toml              # Cross-platform tools
-│   └── macos.toml            # macOS-specific
+│   ├── tools.toml            # Base tools applied everywhere
+│   ├── tools-macos.toml      # Platform overrides (optional)
+│   └── tools-<hostname>.toml # Host overrides (optional)
 └── README.md                  # Auto-generated
 ```
 
 ### Example Manifest
 
 ```toml
-# manifests/cli.toml
+# manifests/tools.toml
 [ripgrep]
 installer = "ubi"
 project = "BurntSushi/ripgrep"
@@ -99,6 +100,21 @@ self_update = true            # Has built-in updates
 installer = "curl"
 url = "https://astral.sh/uv/install.sh"
 ```
+
+### Manifest Reference
+
+- `installer` *(required)* — Backend to use (`ubi`, `curl`, `dmg`, `flatpak`).
+- `project` — GitHub `owner/repo` for release-based installers.
+- `version` — Fixed release version; omit to use the backend default.
+- `url` — Direct download endpoint for scripts or disk images.
+- `shell` — Interpreter used to run installer scripts (e.g. `sh`, `bash`).
+- `bin` — Array of executables to link into `~/.local/state/dws/bin`.
+- `symlinks` — Additional files to link, using `source:target` syntax.
+- `app` — macOS `.app` bundle name extracted from a DMG.
+- `team_id` — Apple Developer team identifier used for notarization checks.
+- `self_update` — Set to `true` if the tool updates itself and should be skipped by `dws update`.
+
+Manifests merge in precedence order: base (`tools.toml`) → platform (e.g. `tools-macos.toml`) → host (`tools-<hostname>.toml`). Higher-precedence manifests only override the fields they specify; omitted keys inherit from lower layers. If the hostname resolves to something unusable, dws falls back to looking for `tools-local.toml`.
 
 ## How It Works
 

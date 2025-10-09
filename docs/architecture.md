@@ -12,8 +12,9 @@
     nvim/
       init.lua
   manifests/
-    cli.toml                  # Cross-platform tools
-    macos.toml                # macOS-specific
+    tools.toml                # Base tool definitions
+    tools-<platform>.toml     # Platform overlays (e.g. tools-macos.toml)
+    tools-<hostname>.toml     # Host overrides (optional)
   README.md
 
 ~/.local/state/dws/           # XDG_STATE_HOME (local execution state)
@@ -49,7 +50,7 @@
    - Not checked into git (machine-specific, lives in XDG_STATE_HOME)
 5. **Cache-based storage**: Tools downloaded once to `~/.cache`, symlinked to state
 6. **Version pinning**: Manifests can pin versions, `update` respects pins
-7. **Manifest override precedence**: `cli.toml` defines global defaults → platform manifests (e.g. `macos.toml`) override globals → host-specific files (any other name) override platform; conflicting definitions at the same scope are rejected.
+7. **Manifest override precedence**: `tools.toml` defines base defaults → platform manifests (e.g. `tools-macos.toml`) override base → host manifests (`tools-<hostname>.toml`) override platform; each layer only touches the fields it needs.
 8. **Wrapper scripts only when needed**: For tools requiring LD_LIBRARY_PATH, etc.
 
 ## CLI Commands
@@ -135,7 +136,7 @@ target = "/Users/user/.local/state/dws/bin/fd"
 ## Manifest Format
 
 ```toml
-# ~/.config/dws/manifests/cli.toml
+# ~/.config/dws/manifests/tools.toml
 
 [ripgrep]
 installer = "ubi"
@@ -153,6 +154,21 @@ url = "https://sh.rustup.rs"
 shell = "sh"
 self_update = true              # Has built-in update mechanism
 ```
+
+### Field Reference
+
+- `installer` *(required)* — Backend identifier (`ubi`, `curl`, `dmg`, `flatpak`).
+- `project` — GitHub `owner/repo` used by release-based installers.
+- `version` — Explicit version pin; omit for backend default/latest.
+- `url` — Direct download endpoint for script or disk image installers.
+- `shell` — Interpreter for installer scripts (e.g. `sh`, `bash`).
+- `bin` — Executables to link into the workspace `bin/` directory.
+- `symlinks` — Extra files to link, using `source:target` syntax.
+- `app` — macOS `.app` bundle name extracted from a DMG.
+- `team_id` — Apple Developer team identifier for notarization verification.
+- `self_update` — Set to `true` for tools that maintain themselves; they will be skipped by `dws update`.
+
+Manifests load in precedence order: base (`tools.toml`) → platform (e.g. `tools-macos.toml`) → host-specific overrides (`tools-<hostname>.toml`). Higher-precedence manifests can override any subset of fields while inheriting unspecified values. When the hostname cannot be converted to a slug, dws falls back to `tools-local.toml`.
 
 ## Key Workflows
 
@@ -217,6 +233,6 @@ dws status    # Show what's installed
 - ✅ Shell auto-detection from $SHELL
 - ✅ Template structure with default shell configs
 - ⏳ Tool installation backends (TODO)
-- ⏳ Manifest parsing (TODO)
+- ✅ Manifest parsing (typed merges across precedence)
 - ⏳ Cleanup command (remove unused cache, orphaned symlinks)
 - ⏳ Status command (read lockfile, show installed state)

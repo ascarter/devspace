@@ -1,7 +1,6 @@
-# macOS-specific applications
+# macOS-specific applications layered on top of tools.toml.
 #
-# These will only be installed on macOS systems.
-# Applications will be installed to /Applications
+# Entries here apply only on macOS machines.
 
 # [ghostty]
 # installer = "dmg"

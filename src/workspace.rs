@@ -34,12 +34,12 @@ const TEMPLATE_FILES: &[TemplateFile] = &[
         content: include_str!("../templates/profile/README.md"),
     },
     TemplateFile {
-        path: "manifests/cli.toml",
-        content: include_str!("../templates/profile/cli.toml"),
+        path: "manifests/tools.toml",
+        content: include_str!("../templates/profile/tools.toml"),
     },
     TemplateFile {
-        path: "manifests/macos.toml",
-        content: include_str!("../templates/profile/macos.toml"),
+        path: "manifests/tools-macos.toml",
+        content: include_str!("../templates/profile/tools-macos.toml"),
     },
     TemplateFile {
         path: "config/zsh/.zshrc",
@@ -541,7 +541,7 @@ mod tests {
         let manifest_dir = workspace.path(WorkspacePath::Manifests);
         fs::create_dir_all(&manifest_dir).unwrap();
         fs::write(
-            manifest_dir.join("cli.toml"),
+            manifest_dir.join("tools.toml"),
             r#"
 [ripgrep]
 installer = "ubi"
@@ -780,11 +780,11 @@ project = "BurntSushi/ripgrep"
             .exists());
         assert!(workspace
             .path(WorkspacePath::Manifests)
-            .join("cli.toml")
+            .join("tools.toml")
             .exists());
         assert!(workspace
             .path(WorkspacePath::Manifests)
-            .join("macos.toml")
+            .join("tools-macos.toml")
             .exists());
     }
 

@@ -16,8 +16,9 @@ $XDG_CONFIG_HOME/dws/            # Your dotfiles repo (version controlled)
     nvim/
       init.lua
   manifests/
-    cli.toml                     # Cross-platform CLI tools
-    macos.toml                   # macOS-specific applications
+    tools.toml                   # Base tool definitions (all machines)
+    tools-macos.toml             # Platform overrides (optional, per OS)
+    tools-<hostname>.toml        # Host overrides (optional, per machine)
   README.md
 ```
 
@@ -45,6 +46,25 @@ dws init yourusername/dotfiles
 2. Edit manifests to include your preferred tools
 3. Commit and push changes
 4. Run `dws sync` on other machines to pull updates
+
+## Writing Manifests
+
+Each entry in `manifests/*.toml` represents a tool. Use these fields:
+
+| Field | Required | Description |
+| ----- | -------- | ----------- |
+| `installer` | ✅ | Backend to use: `ubi`, `curl`, `dmg`, or `flatpak`. |
+| `project` | optional | GitHub `owner/repo` used by installers like `ubi`. |
+| `version` | optional | Pin to a specific release. Omit for latest. |
+| `url` | optional | Direct download URL for scripts or disk images. |
+| `shell` | optional | Shell interpreter to run installer scripts (e.g. `sh`). |
+| `bin` | optional | Array of executables to link into `~/.local/state/dws/bin`. |
+| `symlinks` | optional | Extra files to link using `source:target` pairs. |
+| `app` | optional | `.app` bundle name for macOS DMG installs. |
+| `team_id` | optional | Apple Developer team ID for signed macOS apps. |
+| `self_update` | optional | Set to `true` if the tool updates itself and should be skipped by `dws update`. |
+
+Manifest precedence: `tools.toml` (base) → `tools-<platform>.toml` (e.g. `tools-macos.toml`) → `tools-<hostname>.toml`. Higher-precedence files only need to override the fields that change; leaving a key out inherits the lower layer. If your hostname can’t be sanitized, name the host file `tools-local.toml` and it will be picked up automatically.
 
 ## Shell Integration
 

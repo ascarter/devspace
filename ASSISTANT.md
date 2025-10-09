@@ -46,7 +46,7 @@ This document provides context for AI coding assistants (like Claude Code) worki
 The shell-based prototype demonstrates all core functionality:
 - Manifest-based app management (TOML)
 - Multiple installer backends (UBI, DMG, Flatpak, Curl)
-- Platform detection (macos.toml vs linux.toml)
+- Platform detection (`tools-macos.toml` vs `tools-linux.toml`)
 - Symlink management (dotfiles)
 - XDG directory compliance
 - Health checks (dev doctor)
@@ -57,9 +57,9 @@ The shell-based prototype demonstrates all core functionality:
 - `lib/app/dmg.sh` - DMG backend (macOS)
 - `lib/app/flatpak.sh` - Flatpak backend (Linux)
 - `lib/app/curl.sh` - Curl-based installers
-- `hosts/cli.toml` - Cross-platform tool manifest example
-- `hosts/macos.toml` - macOS-specific manifest
-- `hosts/linux.toml` - Linux-specific manifest
+- `hosts/tools.toml` - Base tool manifest example
+- `hosts/tools-macos.toml` - macOS-specific manifest
+- `hosts/tools-linux.toml` - Linux-specific manifest
 - `docs/app-management.md` - Complete documentation
 
 ### Key Learnings from Shell Implementation
@@ -202,7 +202,7 @@ pub enum InstallerKind {
 }
 ```
 
-`Workspace` is the façade used by CLI commands. It exposes helpers for initialization, template installation, and shell integration. `Config` discovers and installs symlinks from `workspace/config/` into `$XDG_CONFIG_HOME`. `Environment` renders `dws env` output so shells can source a deterministic PATH. `ManifestSet` loads typed tool definitions from `workspace/manifests/`, applying overrides in config order (global `cli.toml` → platform manifest → host-specific files). `Lockfile` currently serializes state but still needs to be integrated with install/update flows.
+`Workspace` is the façade used by CLI commands. It exposes helpers for initialization, template installation, and shell integration. `Config` discovers and installs symlinks from `workspace/config/` into `$XDG_CONFIG_HOME`. `Environment` renders `dws env` output so shells can source a deterministic PATH. `ManifestSet` loads typed tool definitions from `workspace/manifests/`, applying overrides in config order (base `tools.toml` → platform manifest such as `tools-macos.toml` → host-specific files like `tools-<hostname>.toml`). `Lockfile` currently serializes state but still needs to be integrated with install/update flows.
 
 ### Planned Extensions
 
@@ -455,7 +455,7 @@ See shell implementation for working examples. Key concepts:
 ### App Manifest Structure
 
 ```toml
-# Cross-platform tools (cli.toml)
+# Base tools (tools.toml)
 [ripgrep]
 installer = "ubi"
 project = "BurntSushi/ripgrep"
@@ -465,7 +465,7 @@ symlinks = [
   "complete/_rg:${XDG_DATA_HOME}/zsh/completions/_rg"
 ]
 
-# macOS-specific (macos.toml)
+# macOS-specific (tools-macos.toml)
 [ghostty]
 installer = "dmg"
 url = "https://ghostty.org/download"
@@ -473,7 +473,7 @@ app = "Ghostty.app"
 team_id = "24VZTF6M5V"
 self_update = true
 
-# Linux-specific (linux.toml)
+# Linux-specific (tools-linux.toml)
 [vivaldi]
 installer = "flatpak"
 app_id = "com.vivaldi.Vivaldi"
@@ -487,9 +487,10 @@ remote = "flathub"
    - `symlinks`: Supplementary files (man pages, completions)
 
 2. **Platform-specific manifests**:
-   - `cli.toml`: Cross-platform tools
-   - `macos.toml`: macOS-only apps
-   - `linux.toml`: Linux-only apps
+   - `tools.toml`: Base tools shared across platforms
+   - `tools-macos.toml`: macOS-only apps
+ - `tools-linux.toml`: Linux-only apps
+  - `tools-local.toml`: Fallback used when hostname can't be sanitized
 
 3. **Smart defaults**:
    - `bin` defaults to `["<app_name>"]`

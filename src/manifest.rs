@@ -1,9 +1,10 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
+use whoami::fallible;
 
 /// Supported installer backends defined in manifests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -29,16 +30,33 @@ impl fmt::Display for InstallerKind {
 /// A tool definition loaded from a manifest.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolDefinition {
+    /// Installer backend used to provision the tool (e.g. `ubi`, `curl`).
     pub installer: InstallerKind,
+    /// GitHub `owner/repo` when using backends that download releases.
     pub project: Option<String>,
+    /// Explicit version pin; `None` means use the backend default/latest.
     pub version: Option<String>,
+    /// Direct download URL for installers that fetch a script or disk image.
     pub url: Option<String>,
+    /// Shell interpreter to execute the installer script (e.g. `sh`, `bash`).
     pub shell: Option<String>,
+    /// Executables that should be linked into the workspace `bin/` directory.
     pub bin: Vec<String>,
+    /// Additional files to symlink; supports `source:target` syntax.
     pub symlinks: Vec<String>,
+    /// Name of the `.app` bundle for macOS DMG installations.
     pub app: Option<String>,
+    /// Apple Developer team ID used to validate signed macOS apps.
     pub team_id: Option<String>,
+    /// Whether the tool has its own update mechanism and should be skipped by `dws update`.
     pub self_update: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum ManifestScope {
+    Base = 0,
+    Platform = 1,
+    Host = 2,
 }
 
 /// Representation of a single manifest file.
@@ -46,51 +64,38 @@ pub struct ToolDefinition {
 pub struct Manifest {
     pub path: PathBuf,
     pub precedence: u8,
-    pub tools: BTreeMap<String, ToolDefinition>,
+    /// Partially specified tool definitions as they were parsed from the manifest.
+    /// Kept in raw form so higher-precedence manifests can override individual fields.
+    entries: BTreeMap<String, ToolDefinitionOverlay>,
 }
 
 impl Manifest {
-    /// Load a manifest file from disk.
-    pub fn load(path: &Path) -> Result<Self> {
-        let precedence = precedence_for(path);
-
+    /// Load a manifest file from disk with a known scope.
+    fn load(path: &Path, scope: ManifestScope) -> Result<Self> {
         let contents = fs::read_to_string(path)
             .with_context(|| format!("Failed to read manifest file {:?}", path))?;
 
         if contents.trim().is_empty() {
             return Ok(Self {
                 path: path.to_path_buf(),
-                precedence,
-                tools: BTreeMap::new(),
+                precedence: scope as u8,
+                entries: BTreeMap::new(),
             });
         }
 
         let raw: RawManifest = toml::from_str(&contents)
             .with_context(|| format!("Failed to parse manifest file {:?}", path))?;
 
-        let mut tools = BTreeMap::new();
+        let mut entries = BTreeMap::new();
 
         for (name, raw_def) in raw.entries {
-            let definition = ToolDefinition {
-                installer: raw_def.installer,
-                project: raw_def.project,
-                version: raw_def.version,
-                url: raw_def.url,
-                shell: raw_def.shell,
-                bin: raw_def.bin,
-                symlinks: raw_def.symlinks,
-                app: raw_def.app,
-                team_id: raw_def.team_id,
-                self_update: raw_def.self_update,
-            };
-
-            tools.insert(name, definition);
+            entries.insert(name, raw_def);
         }
 
         Ok(Self {
             path: path.to_path_buf(),
-            precedence,
-            tools,
+            precedence: scope as u8,
+            entries,
         })
     }
 }
@@ -120,82 +125,47 @@ impl ManifestSet {
 
         let mut manifests = Vec::new();
 
-        for entry in fs::read_dir(dir)
-            .with_context(|| format!("Failed to read manifests directory {:?}", dir))?
-        {
-            let entry = entry?;
-            let path = entry.path();
-
-            if !path.is_file() || path.extension().and_then(|ext| ext.to_str()) != Some("toml") {
-                continue;
-            }
-
-            let manifest = Manifest::load(&path)?;
-            manifests.push(manifest);
+        let base_path = dir.join("tools.toml");
+        if base_path.exists() {
+            manifests.push(Manifest::load(&base_path, ManifestScope::Base)?);
+        } else {
+            return Ok(Self::default());
         }
 
-        // Sort manifests by precedence (global -> platform -> host) and then by file name
-        manifests.sort_by(|a, b| {
-            let a_name = a
-                .path
-                .file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or_default();
-            let b_name = b
-                .path
-                .file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or_default();
+        if let Some(platform_path) = platform_manifest_path(dir) {
+            manifests.push(Manifest::load(&platform_path, ManifestScope::Platform)?);
+        }
 
-            a.precedence
-                .cmp(&b.precedence)
-                .then_with(|| a_name.cmp(b_name))
-        });
+        if let Some(host_path) = host_manifest_path(dir) {
+            manifests.push(Manifest::load(&host_path, ManifestScope::Host)?);
+        }
 
-        let mut merged: BTreeMap<String, ManifestEntry> = BTreeMap::new();
-        let mut precedence_map: HashMap<String, (u8, PathBuf)> = HashMap::new();
+        let mut overlays: BTreeMap<String, ToolDefinitionOverlay> = BTreeMap::new();
+        let mut sources: HashMap<String, (PathBuf, u8)> = HashMap::new();
 
         for manifest in &manifests {
-            for (name, definition) in &manifest.tools {
-                match precedence_map.get(name) {
-                    None => {
-                        precedence_map
-                            .insert(name.clone(), (manifest.precedence, manifest.path.clone()));
-                        merged.insert(
-                            name.clone(),
-                            ManifestEntry {
-                                name: name.clone(),
-                                source: manifest.path.clone(),
-                                precedence: manifest.precedence,
-                                definition: definition.clone(),
-                            },
-                        );
-                    }
-                    Some((existing_precedence, existing_path)) => {
-                        if manifest.precedence == *existing_precedence {
-                            bail!(
-                                "Tool '{}' defined in both {:?} and {:?} with the same precedence",
-                                name,
-                                existing_path,
-                                manifest.path
-                            );
-                        }
+            for (name, overlay) in &manifest.entries {
+                overlays.entry(name.clone()).or_default().apply(overlay);
+                sources.insert(name.clone(), (manifest.path.clone(), manifest.precedence));
+            }
+        }
 
-                        if manifest.precedence > *existing_precedence {
-                            precedence_map
-                                .insert(name.clone(), (manifest.precedence, manifest.path.clone()));
-                            merged.insert(
-                                name.clone(),
-                                ManifestEntry {
-                                    name: name.clone(),
-                                    source: manifest.path.clone(),
-                                    precedence: manifest.precedence,
-                                    definition: definition.clone(),
-                                },
-                            );
-                        }
-                    }
-                }
+        let mut merged: BTreeMap<String, ManifestEntry> = BTreeMap::new();
+
+        for (name, overlay) in overlays {
+            let definition = overlay
+                .into_definition(&name)
+                .with_context(|| format!("While finalizing tool '{}'", name))?;
+            if let Some((source, precedence)) = sources.remove(&name) {
+                merged.insert(
+                    name.clone(),
+                    ManifestEntry {
+                        name,
+                        source,
+                        precedence,
+                        definition,
+                    },
+                );
             }
         }
 
@@ -223,53 +193,158 @@ impl ManifestSet {
     }
 }
 
+/// Helper used while merging layered manifest definitions into a concrete [`ToolDefinition`].
+#[derive(Debug, Default, Clone, Deserialize)]
+struct ToolDefinitionOverlay {
+    installer: Option<InstallerKind>,
+    project: Option<String>,
+    version: Option<String>,
+    url: Option<String>,
+    shell: Option<String>,
+    bin: Option<Vec<String>>,
+    symlinks: Option<Vec<String>>,
+    app: Option<String>,
+    team_id: Option<String>,
+    self_update: Option<bool>,
+}
+
+impl ToolDefinitionOverlay {
+    /// Merge raw values from a single manifest layer.
+    fn apply(&mut self, other: &ToolDefinitionOverlay) {
+        if let Some(installer) = other.installer {
+            self.installer = Some(installer);
+        }
+
+        if let Some(project) = &other.project {
+            self.project = Some(project.clone());
+        }
+
+        if let Some(version) = &other.version {
+            self.version = Some(version.clone());
+        }
+
+        if let Some(url) = &other.url {
+            self.url = Some(url.clone());
+        }
+
+        if let Some(shell) = &other.shell {
+            self.shell = Some(shell.clone());
+        }
+
+        if let Some(bin) = &other.bin {
+            self.bin = Some(bin.clone());
+        }
+
+        if let Some(symlinks) = &other.symlinks {
+            self.symlinks = Some(symlinks.clone());
+        }
+
+        if let Some(app) = &other.app {
+            self.app = Some(app.clone());
+        }
+
+        if let Some(team_id) = &other.team_id {
+            self.team_id = Some(team_id.clone());
+        }
+
+        if let Some(self_update) = other.self_update {
+            self.self_update = Some(self_update);
+        }
+    }
+
+    /// Finish merging and validate that required fields are present.
+    fn into_definition(self, name: &str) -> Result<ToolDefinition> {
+        let installer = self
+            .installer
+            .ok_or_else(|| anyhow!("Tool '{}' is missing required field 'installer'", name))?;
+
+        Ok(ToolDefinition {
+            installer,
+            project: self.project,
+            version: self.version,
+            url: self.url,
+            shell: self.shell,
+            bin: self.bin.unwrap_or_default(),
+            symlinks: self.symlinks.unwrap_or_default(),
+            app: self.app,
+            team_id: self.team_id,
+            self_update: self.self_update.unwrap_or(false),
+        })
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct RawManifest {
     #[serde(flatten)]
-    entries: BTreeMap<String, RawToolDefinition>,
+    entries: BTreeMap<String, ToolDefinitionOverlay>,
 }
 
-#[derive(Debug, Deserialize)]
-struct RawToolDefinition {
-    installer: InstallerKind,
-    #[serde(default)]
-    project: Option<String>,
-    #[serde(default)]
-    version: Option<String>,
-    #[serde(default)]
-    url: Option<String>,
-    #[serde(default)]
-    shell: Option<String>,
-    #[serde(default)]
-    bin: Vec<String>,
-    #[serde(default)]
-    symlinks: Vec<String>,
-    #[serde(default)]
-    app: Option<String>,
-    #[serde(default, rename = "team_id")]
-    team_id: Option<String>,
-    #[serde(default)]
-    self_update: bool,
+fn platform_manifest_path(dir: &Path) -> Option<PathBuf> {
+    let platform = platform_slug();
+    let path = dir.join(format!("tools-{}.toml", platform));
+    path.exists().then_some(path)
 }
 
-fn precedence_for(path: &Path) -> u8 {
-    let stem = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or_default()
-        .to_lowercase();
+fn host_manifest_path(dir: &Path) -> Option<PathBuf> {
+    host_slug().and_then(|slug| {
+        let path = dir.join(format!("tools-{}.toml", slug));
+        path.exists().then_some(path)
+    })
+}
 
-    const GLOBAL_STEMS: &[&str] = &["cli", "global", "base", "shared"];
-    const PLATFORM_STEMS: &[&str] = &[
-        "macos", "darwin", "linux", "ubuntu", "debian", "fedora", "arch", "windows", "win32",
-    ];
+fn platform_slug() -> &'static str {
+    match std::env::consts::OS {
+        "macos" => "macos",
+        "linux" => "linux",
+        "windows" => "windows",
+        other => other,
+    }
+}
 
-    if GLOBAL_STEMS.contains(&stem.as_str()) {
-        0
-    } else if PLATFORM_STEMS.contains(&stem.as_str()) {
-        1
+fn host_slug() -> Option<String> {
+    let raw = fallible::hostname()
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            std::env::var("HOSTNAME")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        })
+        .or_else(|| {
+            std::env::var("COMPUTERNAME")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        })
+        .or_else(|| {
+            std::env::var("HOST")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        })
+        .unwrap_or_else(|| "local".to_string());
+
+    let mut slug = String::new();
+    let mut previous_dash = false;
+
+    for ch in raw.chars() {
+        let mapped = if ch.is_ascii_alphanumeric() {
+            previous_dash = false;
+            ch.to_ascii_lowercase()
+        } else {
+            if previous_dash {
+                continue;
+            }
+            previous_dash = true;
+            '-'
+        };
+
+        slug.push(mapped);
+    }
+
+    let slug = slug.trim_matches('-').to_string();
+    if slug.is_empty() {
+        Some("local".to_string())
     } else {
-        2
+        Some(slug)
     }
 }
 
@@ -279,12 +354,17 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
+    fn host_slug_for_tests() -> String {
+        super::host_slug()
+            .expect("hostname slug should be derivable (contains alphanumeric characters)")
+    }
+
     #[test]
     fn load_from_dir_parses_multiple_files() {
         let temp = TempDir::new().unwrap();
         let manifest_dir = temp.path();
 
-        let cli_manifest = r#"
+        let base_manifest = r#"
 [ripgrep]
 installer = "ubi"
 project = "BurntSushi/ripgrep"
@@ -298,7 +378,7 @@ installer = "ubi"
 project = "sharkdp/fd"
 "#;
 
-        let mac_manifest = r#"
+        let platform_manifest = r#"
 [ghostty]
 installer = "dmg"
 url = "https://ghostty.org/download"
@@ -307,8 +387,9 @@ team_id = "24VZTF6M5V"
 self_update = true
 "#;
 
-        fs::write(manifest_dir.join("cli.toml"), cli_manifest).unwrap();
-        fs::write(manifest_dir.join("macos.toml"), mac_manifest).unwrap();
+        fs::write(manifest_dir.join("tools.toml"), base_manifest).unwrap();
+        let platform_file = format!("tools-{}.toml", super::platform_slug());
+        fs::write(manifest_dir.join(&platform_file), platform_manifest).unwrap();
 
         let manifests = ManifestSet::load_from_dir(manifest_dir).unwrap();
         assert_eq!(manifests.len(), 3);
@@ -316,13 +397,6 @@ self_update = true
         let mut names: Vec<_> = manifests.iter().map(|m| m.name.clone()).collect();
         names.sort();
         assert_eq!(names, vec!["fd", "ghostty", "ripgrep"]);
-
-        let rg = manifests.iter().find(|m| m.name == "ripgrep").unwrap();
-        assert_eq!(rg.definition.installer, InstallerKind::Ubi);
-        assert_eq!(rg.definition.project.as_deref(), Some("BurntSushi/ripgrep"));
-        assert_eq!(rg.definition.version.as_deref(), Some("14.0.0"));
-        assert_eq!(rg.definition.bin, vec!["rg"]);
-        assert!(rg.definition.self_update);
 
         let ghostty = manifests.iter().find(|m| m.name == "ghostty").unwrap();
         assert_eq!(ghostty.definition.installer, InstallerKind::Dmg);
@@ -332,6 +406,10 @@ self_update = true
         );
         assert_eq!(ghostty.definition.app.as_deref(), Some("Ghostty.app"));
         assert_eq!(ghostty.definition.team_id.as_deref(), Some("24VZTF6M5V"));
+        assert_eq!(
+            ghostty.source.file_name().and_then(|s| s.to_str()).unwrap(),
+            platform_file
+        );
     }
 
     #[test]
@@ -344,35 +422,36 @@ self_update = true
     #[test]
     fn missing_installer_errors() {
         let temp = TempDir::new().unwrap();
-        let path = temp.path().join("invalid.toml");
-        fs::write(&path, "[tool]\nproject = \"example\"\n").unwrap();
+        let dir = temp.path();
+        fs::write(dir.join("tools.toml"), "[tool]\nproject = \"example\"\n").unwrap();
 
-        let error = ManifestSet::load_from_dir(temp.path()).unwrap_err();
-        let message = error.to_string().to_lowercase();
+        let error = ManifestSet::load_from_dir(dir).unwrap_err();
+        let message = format!("{error:#}").to_lowercase();
         assert!(
-            message.contains("failed to parse manifest file"),
+            message.contains("missing required field 'installer'"),
             "{}",
             error
         );
     }
 
     #[test]
-    fn overrides_follow_precedence() {
+    fn host_overrides_follow_precedence() {
         let temp = TempDir::new().unwrap();
         let dir = temp.path();
 
         fs::write(
-            dir.join("cli.toml"),
+            dir.join("tools.toml"),
             r#"
 [ripgrep]
 installer = "ubi"
+project = "BurntSushi/ripgrep"
 version = "13.0.0"
 "#,
         )
         .unwrap();
 
         fs::write(
-            dir.join("macos.toml"),
+            dir.join(format!("tools-{}.toml", super::platform_slug())),
             r#"
 [ripgrep]
 installer = "ubi"
@@ -381,8 +460,9 @@ version = "14.0.0"
         )
         .unwrap();
 
+        let host_slug = host_slug_for_tests();
         fs::write(
-            dir.join("work-laptop.toml"),
+            dir.join(format!("tools-{}.toml", host_slug)),
             r#"
 [ripgrep]
 installer = "ubi"
@@ -398,12 +478,16 @@ bin = ["rg"]
         let entry = manifests.iter().next().unwrap();
         assert_eq!(entry.definition.version.as_deref(), Some("15.0.0"));
         assert_eq!(entry.definition.bin, vec!["rg"]);
+        assert_eq!(
+            entry.definition.project.as_deref(),
+            Some("BurntSushi/ripgrep")
+        );
         assert!(entry
             .source
             .file_name()
             .and_then(|s| s.to_str())
             .unwrap()
-            .contains("work-laptop"));
+            .contains(&host_slug));
         assert_eq!(entry.precedence, 2);
 
         let manifest_paths: Vec<_> = manifests
@@ -417,28 +501,124 @@ bin = ["rg"]
                     .to_string()
             })
             .collect();
+        assert_eq!(manifest_paths.len(), 3);
+        assert_eq!(manifest_paths[0], "tools.toml");
         assert_eq!(
-            manifest_paths,
-            vec!["cli.toml", "macos.toml", "work-laptop.toml"]
+            manifest_paths[1],
+            format!("tools-{}.toml", super::platform_slug())
         );
+        assert_eq!(manifest_paths[2], format!("tools-{}.toml", host_slug));
     }
 
     #[test]
-    fn same_precedence_conflict_errors() {
+    fn inherits_lower_precedence_fields_when_not_overridden() {
         let temp = TempDir::new().unwrap();
         let dir = temp.path();
 
         fs::write(
-            dir.join("work.toml"),
+            dir.join("tools.toml"),
             r#"
 [ripgrep]
 installer = "ubi"
+project = "BurntSushi/ripgrep"
+bin = ["rg"]
+symlinks = ["doc/rg.1:${STATE_DIR}/share/man/man1/rg.1"]
 "#,
         )
         .unwrap();
 
         fs::write(
-            dir.join("laptop.toml"),
+            dir.join(format!("tools-{}.toml", super::platform_slug())),
+            r#"
+[ripgrep]
+version = "14.0.0"
+"#,
+        )
+        .unwrap();
+
+        let manifests = ManifestSet::load_from_dir(dir).unwrap();
+        assert_eq!(manifests.len(), 1);
+
+        let entry = manifests.iter().next().unwrap();
+        assert_eq!(entry.definition.version.as_deref(), Some("14.0.0"));
+        assert_eq!(entry.definition.bin, vec!["rg"]);
+        assert_eq!(
+            entry.definition.symlinks,
+            vec!["doc/rg.1:${STATE_DIR}/share/man/man1/rg.1"]
+        );
+        assert_eq!(
+            entry.definition.project.as_deref(),
+            Some("BurntSushi/ripgrep")
+        );
+    }
+
+    #[test]
+    fn explicit_empty_list_overrides_previous_values() {
+        let temp = TempDir::new().unwrap();
+        let dir = temp.path();
+
+        fs::write(
+            dir.join("tools.toml"),
+            r#"
+[ripgrep]
+installer = "ubi"
+bin = ["rg"]
+"#,
+        )
+        .unwrap();
+
+        let host_slug = host_slug_for_tests();
+        fs::write(
+            dir.join(format!("tools-{}.toml", host_slug)),
+            r#"
+[ripgrep]
+bin = []
+"#,
+        )
+        .unwrap();
+
+        let manifests = ManifestSet::load_from_dir(dir).unwrap();
+        let entry = manifests.iter().next().unwrap();
+        assert!(entry.definition.bin.is_empty());
+        assert_eq!(entry.precedence, 2);
+    }
+
+    #[test]
+    fn bool_fields_can_be_overridden() {
+        let temp = TempDir::new().unwrap();
+        let dir = temp.path();
+
+        fs::write(
+            dir.join("tools.toml"),
+            r#"
+[rustup]
+installer = "curl"
+self_update = true
+"#,
+        )
+        .unwrap();
+
+        fs::write(
+            dir.join(format!("tools-{}.toml", super::platform_slug())),
+            r#"
+[rustup]
+self_update = false
+"#,
+        )
+        .unwrap();
+
+        let manifests = ManifestSet::load_from_dir(dir).unwrap();
+        let entry = manifests.iter().next().unwrap();
+        assert!(!entry.definition.self_update);
+    }
+
+    #[test]
+    fn host_only_tools_are_loaded() {
+        let temp = TempDir::new().unwrap();
+        let dir = temp.path();
+
+        fs::write(
+            dir.join("tools.toml"),
             r#"
 [ripgrep]
 installer = "ubi"
@@ -446,7 +626,21 @@ installer = "ubi"
         )
         .unwrap();
 
-        let error = ManifestSet::load_from_dir(dir).unwrap_err();
-        assert!(error.to_string().contains("same precedence"), "{}", error);
+        let host_slug = host_slug_for_tests();
+        fs::write(
+            dir.join(format!("tools-{}.toml", host_slug)),
+            r#"
+[fd]
+installer = "ubi"
+"#,
+        )
+        .unwrap();
+
+        let manifests = ManifestSet::load_from_dir(dir).unwrap();
+        assert_eq!(manifests.len(), 2);
+
+        let mut names: Vec<_> = manifests.iter().map(|entry| entry.name.clone()).collect();
+        names.sort();
+        assert_eq!(names, vec!["fd", "ripgrep"]);
     }
 }

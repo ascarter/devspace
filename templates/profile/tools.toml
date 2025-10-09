@@ -1,14 +1,12 @@
-# Cross-platform CLI tools
+# Base tools applied on every machine.
 #
-# Tools defined here will be installed to $XDG_STATE_HOME/dws/bin
-# and cached in $XDG_CACHE_HOME/dws/apps
-#
-# Uncomment and customize the tools you want to install
+# Entries defined here install into $XDG_STATE_HOME/dws/bin and are cached in
+# $XDG_CACHE_HOME/dws/apps. Uncomment and customize the tools you want.
 
 # [ripgrep]
 # installer = "ubi"
 # project = "BurntSushi/ripgrep"
-# version = "14.0.0"  # Pin version (optional, omit for latest)
+# version = "14.0.0"  # Pin version (optional)
 
 # [fd]
 # installer = "ubi"
