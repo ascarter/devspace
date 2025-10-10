@@ -4,7 +4,7 @@ This document is the single source of truth for AI and human collaborators who a
 
 ## Project Overview
 
-- **Mission**: ship a lightweight, portable bootstrapper that turns a fresh POSIX machine into a ready-to-code workspace using declarative manifests.
+- **Mission**: ship a lightweight, portable bootstrapper that turns a fresh POSIX machine into a ready-to-code workspace using declarative `config.toml` files.
 - **License**: MIT &nbsp;|&nbsp; **Primary language**: Rust 2021
 - **Repository**: `https://github.com/ascarter/dws`
 - Everything lives inside the XDG directory hierarchy so uninstalling the tool simply removes `$XDG_CONFIG_HOME/dws`, `$XDG_STATE_HOME/dws`, and `$XDG_CACHE_HOME/dws`.
@@ -13,7 +13,7 @@ This document is the single source of truth for AI and human collaborators who a
 1. Bootstrap laptops quickly with a single binary.
 2. Remain XDG compliant and self-contained.
 3. Favor native tooling (rustup, uv, fnm, etc.) over shims.
-4. Track dotfiles and tool manifests in version control.
+4. Track dotfiles and `config.toml` tool definitions in version control.
 5. Support multiple “profiles” so users can switch between contexts (personal, client, project).
 
 ### Non-goals
@@ -36,11 +36,11 @@ This document is the single source of truth for AI and human collaborators who a
 - `src/lib.rs` – Public API surface exposing the core types.
 - `src/cli.rs` – Clap configuration for every `dws` subcommand.
 - `src/commands/` – One module per subcommand (`init`, `clone`, `use`, `profiles`, etc.).
-- `src/config.rs` – Workspace-level settings persisted to `config.toml` (active profile).
+- `src/config.rs` – Workspace-level settings persisted to `config.toml` (active profile + overrides).
 - `src/dotfiles.rs` – Discovers, installs, and removes profile-managed symlinks.
 - `src/environment.rs` – Emits shell environment exports.
 - `src/workspace.rs` – High-level orchestration: directory layout, profile management, installers.
-- `src/manifest.rs`, `src/lockfile.rs`, `src/installers/` – Tool manifest parsing and install backends.
+- `src/toolset.rs`, `src/lockfile.rs`, `src/installers/` – Tool resolution and installer backends.
 - `templates/` – Embedded starter profile (copied during `dws init`).
 - `tests/` – Integration tests (top-level harness in `tests/cli_test.rs`).
 - `docs/architecture.md` – Long-form technical design.
@@ -71,7 +71,7 @@ This document is the single source of truth for AI and human collaborators who a
 
 ## Workflow & Collaboration Norms
 
-- Commit subjects use imperative, sentence-case phrasing (e.g., “Add manifest parser”).
+- Commit subjects use imperative, sentence-case phrasing (e.g., “Add tool resolver”).
 - Keep commits reviewable; group related changes logically.
 - PR descriptions should explain the scenario, list key changes, and record validation (commands run, manual steps taken).
 - Surface user-visible updates by adjusting `README.md` or `docs/architecture.md` as part of the same change.
@@ -84,12 +84,12 @@ Workspace                    // Root context (~/.config/dws)
   └─ Profile                 // Named context stored under profiles/<name>
        ├─ Dotfiles           // Symlink installation into XDG config dirs
        ├─ Environment        // Shell-specific exports
-       └─ ManifestSet        // Tool definitions with precedence rules
+       └─ ToolSet            // Tool definitions with profile/workspace overrides
 ```
 
 - The active profile is persisted in `$XDG_CONFIG_HOME/dws/config.toml`.
 - Profile repositories live under `$XDG_CONFIG_HOME/dws/profiles/<profile>`.
-- Precedence for manifests: base `tools.toml` → platform (e.g. `tools-macos.toml`) → host-specific overrides (`tools-<hostname>.toml`).
+- Tool precedence: profile `config.toml` defines the baseline, and `$XDG_CONFIG_HOME/dws/config.toml` can add or replace entire tool entries that match the current platform/host filters.
 - Template scaffolding seeds a `default` profile during `dws init`.
 - `Dotfiles` installs symlinks from `<profile>/config/**` into the target XDG directory, respecting `.dwsignore`.
 - `Lockfile` captures installed symlinks and tools to support idempotent reinstall/update flows.
@@ -105,7 +105,7 @@ Workspace                    // Root context (~/.config/dws)
 ## Prior Art & Inspiration
 
 - Original shell prototype (private repo) demonstrated manifest-driven installs, platform separation, and XDG compliance. Rust implementation borrows the data model but improves type safety, performance, and parallelism opportunity.
-- Key learnings carried over: declarative manifests, dedicated installers per backend, strong defaults, and explicit health checks.
+- Key learnings carried over: declarative configuration files, dedicated installers per backend, strong defaults, and explicit health checks.
 - Improvements targeted in Rust: richer error handling, better progress output, parallel installs, and first-class profile switching.
 
 ## Reference Map

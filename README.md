@@ -2,7 +2,7 @@
 
 > Developer Workspace - Lightweight, portable development environment manager
 
-**dws (Developer Workspace)** manages your dotfiles and development tools through declarative manifests. Bootstrap new machines, sync configurations, and maintain your dev environment with a single portable binary.
+**dws (Developer Workspace)** manages your dotfiles and development tools through declarative `config.toml` configuration files. Bootstrap new machines, sync configurations, and maintain your dev environment with a single portable binary.
 
 ## Status
 
@@ -13,7 +13,7 @@
 A personal dev environment manager optimized for interactive development:
 
 - **Quick bootstrap**: Single binary → full dev environment
-- **Version controlled**: Dotfiles + tool manifests in GitHub
+- **Version controlled**: Dotfiles + `config.toml` tool definitions in GitHub
 - **XDG compliant**: Self-contained, easy to remove
 - **Native tools**: Use rustup/uv/fnm directly, no shims
 - **Single workspace**: One environment per machine/container
@@ -73,53 +73,59 @@ dws use work
 
 ```
 ~/.config/dws/                 # dws workspace root (reserved for tooling)
-├── config.toml                # Workspace configuration (active profile, etc.)
-├── profiles/                  # User-managed profiles (each is a git repo)
-│   ├── default/               # Default profile created by dws init
-│   │   ├── config/            # XDG config files → symlinked to ~/.config
-│   │   └── manifests/         # Tool definitions
-│   └── <profile>/             # Additional profiles cloned or created
-└── (future dws config)
+├── config.toml               # Workspace configuration (active profile + overrides)
+├── profiles/                 # User-managed profiles (each is a git repo)
+│   ├── default/              # Default profile created by dws init
+│   │   ├── config/           # XDG config files → symlinked to ~/.config
+│   │   └── config.toml       # Profile-level tool definitions
+│   └── <profile>/            # Additional profiles cloned or created
+└── (state/cache live under $XDG_STATE_HOME/$XDG_CACHE_HOME)
 ```
 
 ### Profiles
 
 - `dws profiles` &mdash; list available profiles (the active one is marked).
 - `dws clone <repo> [--profile name]` &mdash; clone another profile into `profiles/<name>` without activating it.
-- `dws use <profile>` &mdash; switch to a profile (symlinks are updated and `config.toml` is rewritten).
-### Example Manifest
+- `dws use <profile>` &mdash; switch to a profile (symlinks are updated and `$XDG_CONFIG_HOME/dws/config.toml` is rewritten).
+
+### Example `config.toml`
 
 ```toml
-# profiles/<profile>/manifests/tools.toml
-[ripgrep]
+# profiles/<profile>/config.toml
+[tools.ripgrep]
 installer = "ubi"
 project = "BurntSushi/ripgrep"
-version = "14.0.0"            # Pin version (optional)
+platform = ["macos", "linux"]
 
-[rustup]
-installer = "curl"
-url = "https://sh.rustup.rs"
-self_update = true            # Has built-in updates
-
-[uv]
+[tools.uv]
 installer = "curl"
 url = "https://astral.sh/uv/install.sh"
+shell = "sh"
+self_update = true
+
+# Optional workspace overrides live in $XDG_CONFIG_HOME/dws/config.toml
+# and replace entire tool entries when names match.
 ```
 
-### Manifest Reference
+### Tool Entry Reference
 
 - `installer` *(required)* — Backend to use (`ubi`, `curl`, `dmg`, `flatpak`).
 - `project` — GitHub `owner/repo` for release-based installers.
 - `version` — Fixed release version; omit to use the backend default.
 - `url` — Direct download endpoint for scripts or disk images.
 - `shell` — Interpreter used to run installer scripts (e.g. `sh`, `bash`).
-- `bin` — Array of executables to link into `~/.local/state/dws/bin`.
+- `bin` — Array of executables to link into `~/.local/state/dws/bin` (defaults to installer-provided binary name when omitted for `ubi`).
 - `symlinks` — Additional files to link, using `source:target` syntax.
 - `app` — macOS `.app` bundle name extracted from a DMG.
 - `team_id` — Apple Developer team identifier used for notarization checks.
 - `self_update` — Set to `true` if the tool updates itself and should be skipped by `dws update`.
+- `platform` — Optional list of platform filters. Values match Rust's `std::env::consts::OS` (`macos`, `linux`) plus distro slugs such as `linux-ubuntu` or `linux-arch` inferred from `/etc/os-release`. Windows is unsupported (use WSL instead).
+- `hosts` — Optional list of sanitized hostnames (lowercase, non-alphanumeric converted to `-`).
 
-Manifests merge in precedence order: base (`tools.toml`) → platform (e.g. `tools-macos.toml`) → host (`tools-<hostname>.toml`). Higher-precedence manifests only override the fields they specify; omitted keys inherit from lower layers. If the hostname resolves to something unusable, dws falls back to looking for `tools-local.toml`.
+Tool entries are layered as follows:
+
+1. **Profile `config.toml`** — checked into the profile repository; forms the base definition set.
+2. **Workspace `config.toml`** — optional overrides stored at `$XDG_CONFIG_HOME/dws/config.toml`. When a tool name appears in both files, the workspace entry replaces the profile entry entirely. Entries that fail platform/host filters are ignored, leaving lower-precedence definitions intact.
 
 ## How It Works
 

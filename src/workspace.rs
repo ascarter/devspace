@@ -9,8 +9,8 @@ use crate::dotfiles::Dotfiles;
 use crate::environment::{Environment, Shell};
 use crate::installers::{self, InstallContext, ToolInstaller};
 use crate::lockfile::Lockfile;
-use crate::manifest::ManifestSet;
 use crate::profile::Profile;
+use crate::toolset::ToolSet;
 use tokio::runtime::Runtime;
 
 /// Template file definition for workspace initialization
@@ -39,12 +39,8 @@ const TEMPLATE_FILES: &[TemplateFile] = &[
         content: include_str!("../templates/profile/README.md"),
     },
     TemplateFile {
-        path: "manifests/tools.toml",
-        content: include_str!("../templates/profile/manifests/tools.toml"),
-    },
-    TemplateFile {
-        path: "manifests/tools-macos.toml",
-        content: include_str!("../templates/profile/manifests/tools-macos.toml"),
+        path: "config.toml",
+        content: include_str!("../templates/profile/config.toml"),
     },
     TemplateFile {
         path: "config/zsh/.zshrc",
@@ -71,8 +67,8 @@ pub enum WorkspacePath {
     Profile,
     /// Config directory: active profile config
     Config,
-    /// Manifests directory: active profile manifests
-    Manifests,
+    /// Profile `config.toml` file
+    ProfileConfig,
     /// Bin directory: $XDG_STATE_HOME/dws/bin
     Bin,
     /// Share directory: $XDG_STATE_HOME/dws/share
@@ -120,7 +116,7 @@ impl Workspace {
         let config_path = workspace_dir.join("config.toml");
 
         let workspace_config = Config::load(&config_path)?;
-        let active_name = workspace_config.active_profile.clone();
+        let active_name = workspace_config.active_profile().to_string();
         let active_profile = Profile::new(active_name.clone(), profiles_dir.join(&active_name));
 
         Ok(Self {
@@ -183,7 +179,7 @@ impl Workspace {
             WorkspacePath::Profiles => self.profiles_dir.clone(),
             WorkspacePath::Profile => self.active_profile.root().to_path_buf(),
             WorkspacePath::Config => self.active_profile.config_dir(),
-            WorkspacePath::Manifests => self.active_profile.manifests_dir(),
+            WorkspacePath::ProfileConfig => self.active_profile.config_file(),
             WorkspacePath::Bin => self.state_dir.join("bin"),
             WorkspacePath::Share => self.state_dir.join("share"),
             WorkspacePath::Lockfile => self.state_dir.join("dws.lock"),
@@ -203,7 +199,7 @@ impl Workspace {
     }
 
     pub fn active_profile_name(&self) -> &str {
-        self.workspace_config.active_profile.as_str()
+        self.workspace_config.active_profile()
     }
 
     pub fn list_profiles(&self) -> Result<Vec<String>> {
@@ -271,7 +267,7 @@ impl Workspace {
                 self.profiles_dir
             )
         })?;
-        self.workspace_config.active_profile = profile.clone();
+        self.workspace_config.set_active_profile(profile.clone());
         self.active_profile = Profile::new(profile.clone(), self.profile_path(&profile));
         self.workspace_config.save(&self.config_path)?;
         Ok(())
@@ -289,7 +285,7 @@ impl Workspace {
         } else if let Some(repo) = repository {
             Self::profile_name_from_repository(repo)
         } else {
-            self.workspace_config.active_profile.clone()
+            self.workspace_config.active_profile().to_string()
         };
 
         let target_profile = Profile::new(target_name.clone(), self.profile_path(&target_name));
@@ -558,15 +554,16 @@ impl Workspace {
         Environment::new_from_workspace(self, shell)
     }
 
-    /// Load tool manifests defined for this workspace.
-    pub fn manifests(&self) -> Result<ManifestSet> {
-        let manifest_dir = self.path(WorkspacePath::Manifests);
-        ManifestSet::load_from_dir(&manifest_dir)
+    /// Load tool definitions defined for this workspace.
+    pub fn tools(&self) -> Result<ToolSet> {
+        let profile_root = self.path(WorkspacePath::Profile);
+        let workspace_config = self.path(WorkspacePath::ConfigFile);
+        ToolSet::load(&profile_root, &workspace_config)
     }
 
     /// Install the workspace (symlink configs, install tools)
     pub fn install(&self) -> Result<()> {
-        let manifests = self.manifests()?;
+        let tools = self.tools()?;
 
         // Ensure cache directory exists before installing assets
         let cache_dir = self.path(WorkspacePath::Cache);
@@ -625,12 +622,12 @@ impl Workspace {
 
         let mut installers: Vec<Box<dyn ToolInstaller>> = Vec::new();
 
-        for entry in manifests.iter() {
-            match installers::create_installer(entry, install_context.clone())? {
+        for (_, entry) in tools.iter() {
+            match installers::create_installer(&entry.definition, install_context.clone())? {
                 Some(installer) => installers.push(installer),
                 None => println!(
                     "Skipping tool '{}' - installer '{}' is not yet supported",
-                    entry.name, entry.definition.installer
+                    entry.definition.name, entry.definition.installer
                 ),
             }
         }
@@ -803,7 +800,7 @@ impl Workspace {
 mod tests {
     use super::*;
     use crate::config::default_profile_name;
-    use crate::manifest::InstallerKind;
+    use crate::toolset::InstallerKind;
     use rstest::rstest;
     use serial_test::serial;
     use tempfile::TempDir;
@@ -849,9 +846,9 @@ mod tests {
             .to_string_lossy()
             .contains("config"));
         assert!(workspace
-            .path(WorkspacePath::Manifests)
+            .path(WorkspacePath::ProfileConfig)
             .to_string_lossy()
-            .contains("manifests"));
+            .ends_with("config.toml"));
         assert!(workspace
             .path(WorkspacePath::Share)
             .to_string_lossy()
@@ -872,26 +869,28 @@ mod tests {
 
     #[test]
     #[serial]
-    fn test_workspace_manifests() {
+    fn test_workspace_tools() {
         let _temp = setup_test_env();
         let workspace = Workspace::new().unwrap();
 
-        let manifest_dir = workspace.path(WorkspacePath::Manifests);
-        fs::create_dir_all(&manifest_dir).unwrap();
+        let profile_config = workspace.path(WorkspacePath::ProfileConfig);
+        if let Some(parent) = profile_config.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
         fs::write(
-            manifest_dir.join("tools.toml"),
+            &profile_config,
             r#"
-[ripgrep]
+[tools.ripgrep]
 installer = "ubi"
 project = "BurntSushi/ripgrep"
 "#,
         )
         .unwrap();
 
-        let manifests = workspace.manifests().unwrap();
-        assert_eq!(manifests.len(), 1);
-        let entry = manifests.iter().next().unwrap();
-        assert_eq!(entry.name, "ripgrep");
+        let tools = workspace.tools().unwrap();
+        assert_eq!(tools.len(), 1);
+        let (name, entry) = tools.iter().next().unwrap();
+        assert_eq!(name, "ripgrep");
         assert_eq!(entry.definition.installer, InstallerKind::Ubi);
     }
 
@@ -970,7 +969,7 @@ project = "BurntSushi/ripgrep"
 
         assert!(workspace.path(WorkspacePath::Profile).exists());
         assert!(workspace.path(WorkspacePath::Config).exists());
-        assert!(workspace.path(WorkspacePath::Manifests).exists());
+        assert!(workspace.path(WorkspacePath::ProfileConfig).exists());
         assert!(workspace
             .path(WorkspacePath::Config)
             .join("zsh/.zshrc")
@@ -1144,14 +1143,7 @@ project = "BurntSushi/ripgrep"
             .path(WorkspacePath::Config)
             .join("fish/config.fish")
             .exists());
-        assert!(workspace
-            .path(WorkspacePath::Manifests)
-            .join("tools.toml")
-            .exists());
-        assert!(workspace
-            .path(WorkspacePath::Manifests)
-            .join("tools-macos.toml")
-            .exists());
+        assert!(workspace.path(WorkspacePath::ProfileConfig).exists());
     }
 
     #[test]

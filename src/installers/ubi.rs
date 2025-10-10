@@ -1,6 +1,6 @@
 use super::{sanitize_component, InstallContext, ToolInstaller};
 use crate::lockfile::Lockfile;
-use crate::manifest::ManifestEntry;
+use crate::toolset::ToolDefinition;
 use anyhow::{anyhow, bail, Context, Result};
 use std::fs;
 use std::os::unix::fs::symlink;
@@ -10,41 +10,40 @@ use ubi::UbiBuilder;
 use walkdir::WalkDir;
 
 pub(crate) struct UbiInstaller {
-    entry: ManifestEntry,
+    definition: ToolDefinition,
     install_root: PathBuf,
     version_label: String,
     bin_dir: PathBuf,
 }
 
 impl UbiInstaller {
-    pub(crate) fn new(mut entry: ManifestEntry, context: InstallContext) -> Result<Self> {
-        if entry.definition.project.is_none() {
+    pub(crate) fn new(mut definition: ToolDefinition, context: InstallContext) -> Result<Self> {
+        if definition.project.is_none() {
             bail!(
                 "Tool '{}' must specify `project` when using the ubi installer",
-                entry.name
+                definition.name
             );
         }
 
-        if entry.definition.bin.is_empty() {
-            let project = entry.definition.project.as_ref().expect("validated above");
+        if definition.bin.is_empty() {
+            let project = definition.project.as_ref().expect("validated above");
             let default_bin = default_bin_name(project);
-            entry.definition.bin = vec![default_bin];
+            definition.bin = vec![default_bin];
         }
 
-        let version_label = entry
-            .definition
+        let version_label = definition
             .version
             .clone()
             .unwrap_or_else(|| "latest".to_string());
 
         let install_root = context
             .cache_apps_dir
-            .join(sanitize_component(&entry.name))
+            .join(sanitize_component(&definition.name))
             .join(sanitize_component(&version_label));
 
         Ok(Self {
             bin_dir: context.bin_dir,
-            entry,
+            definition,
             install_root,
             version_label,
         })
@@ -54,29 +53,24 @@ impl UbiInstaller {
         fs::create_dir_all(&self.install_root).with_context(|| {
             format!(
                 "Failed to create ubi install directory {:?} for '{}'",
-                self.install_root, self.entry.name
+                self.install_root, self.definition.name
             )
         })?;
 
-        let project = self
-            .entry
-            .definition
-            .project
-            .as_ref()
-            .expect("validated above");
+        let project = self.definition.project.as_ref().expect("validated above");
 
         let mut builder = UbiBuilder::new()
             .project(project)
             .install_dir(&self.install_root)
             .extract_all();
 
-        if let Some(tag) = self.entry.definition.version.as_deref() {
+        if let Some(tag) = self.definition.version.as_deref() {
             builder = builder.tag(tag);
         }
 
         let mut ubi = builder
             .build()
-            .with_context(|| format!("Failed to configure ubi for '{}'", self.entry.name))?;
+            .with_context(|| format!("Failed to configure ubi for '{}'", self.definition.name))?;
 
         // Despite the name, `install_binary` unpacks the entire release when `extract_all` is set.
         // We rely on that to preserve additional assets (man pages, completions, etc.) alongside
@@ -84,13 +78,13 @@ impl UbiInstaller {
         runtime.block_on(async {
             ubi.install_binary()
                 .await
-                .with_context(|| format!("Failed to install '{}' via ubi", self.entry.name))
+                .with_context(|| format!("Failed to install '{}' via ubi", self.definition.name))
         })
     }
 
     fn binaries(&self) -> Result<Vec<(String, PathBuf)>> {
         let mut results = Vec::new();
-        for bin_name in &self.entry.definition.bin {
+        for bin_name in &self.definition.bin {
             let source = self.find_binary_path(bin_name)?;
             results.push((bin_name.clone(), source));
         }
@@ -153,7 +147,7 @@ impl UbiInstaller {
             })?;
 
             lockfile.add_tool_symlink(
-                self.entry.name.clone(),
+                self.definition.name.clone(),
                 self.version_label.clone(),
                 source,
                 target,

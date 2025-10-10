@@ -1,5 +1,5 @@
 use crate::lockfile::Lockfile;
-use crate::manifest::{InstallerKind, ManifestEntry};
+use crate::toolset::{InstallerKind, ToolDefinition};
 use anyhow::Result;
 use std::path::PathBuf;
 use tokio::runtime::Runtime;
@@ -20,11 +20,14 @@ pub(crate) trait ToolInstaller {
 }
 
 pub(crate) fn create_installer(
-    entry: &ManifestEntry,
+    definition: &ToolDefinition,
     context: InstallContext,
 ) -> Result<Option<Box<dyn ToolInstaller>>> {
-    match entry.definition.installer {
-        InstallerKind::Ubi => Ok(Some(Box::new(UbiInstaller::new(entry.clone(), context)?))),
+    match definition.installer {
+        InstallerKind::Ubi => Ok(Some(Box::new(UbiInstaller::new(
+            definition.clone(),
+            context,
+        )?))),
         _ => Ok(None),
     }
 }
@@ -48,7 +51,7 @@ pub(crate) fn sanitize_component(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{create_installer, sanitize_component, InstallContext};
-    use crate::manifest::{InstallerKind, ManifestEntry, ToolDefinition};
+    use crate::toolset::{InstallerKind, ToolDefinition};
     use rstest::rstest;
 
     #[test]
@@ -62,6 +65,7 @@ mod tests {
 
     fn sample_definition(installer: InstallerKind, bins: Vec<String>) -> ToolDefinition {
         ToolDefinition {
+            name: "tool".to_string(),
             installer,
             project: Some("owner/project".to_string()),
             version: Some("1.0.0".to_string()),
@@ -76,15 +80,8 @@ mod tests {
             app: None,
             team_id: None,
             self_update: false,
-        }
-    }
-
-    fn sample_entry(installer: InstallerKind) -> ManifestEntry {
-        ManifestEntry {
-            name: "tool".to_string(),
-            source: "manifests/tools.toml".into(),
-            precedence: 0,
-            definition: sample_definition(installer, vec!["tool".to_string()]),
+            platforms: Vec::new(),
+            hosts: Vec::new(),
         }
     }
 
@@ -103,25 +100,21 @@ mod tests {
     #[case(InstallerKind::Dmg, false)]
     #[case(InstallerKind::Flatpak, false)]
     fn test_create_installer_dispatch(#[case] kind: InstallerKind, #[case] expected_some: bool) {
-        let entry = sample_entry(kind);
+        let definition = sample_definition(kind, vec!["tool".to_string()]);
         let context = default_context();
 
-        let result = create_installer(&entry, context).unwrap();
+        let result = create_installer(&definition, context).unwrap();
         assert_eq!(result.is_some(), expected_some);
     }
 
     #[test]
     fn test_create_installer_defaults_missing_bin() {
-        let mut entry = ManifestEntry {
-            name: "precious".to_string(),
-            source: "manifests/tools.toml".into(),
-            precedence: 0,
-            definition: sample_definition(InstallerKind::Ubi, Vec::new()),
-        };
-        entry.definition.project = Some("houseabsolute/precious".to_string());
+        let mut definition = sample_definition(InstallerKind::Ubi, Vec::new());
+        definition.name = "precious".to_string();
+        definition.project = Some("houseabsolute/precious".to_string());
 
         let context = default_context();
-        let installer = create_installer(&entry, context).unwrap();
+        let installer = create_installer(&definition, context).unwrap();
         assert!(installer.is_some());
     }
 }

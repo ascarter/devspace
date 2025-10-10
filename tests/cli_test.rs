@@ -26,6 +26,8 @@ fn test_init_creates_template() {
     assert!(profile_root.exists());
     assert!(profile_root.join("README.md").exists());
     assert!(profile_root.join("config/zsh/.zshrc").exists());
+    assert!(profile_root.join("config.toml").exists());
+    assert!(temp.path().join("dws/config.toml").exists());
 }
 
 #[test]
@@ -203,4 +205,33 @@ fn test_clone_and_use_profile() {
         .assert()
         .success()
         .stdout(predicate::str::contains("* work (active)"));
+}
+
+#[test]
+#[serial]
+fn test_use_missing_profile_fails() {
+    let temp = TempDir::new().unwrap();
+
+    Command::cargo_bin("dws")
+        .unwrap()
+        .env("XDG_CONFIG_HOME", temp.path())
+        .env("XDG_STATE_HOME", temp.path().join("state"))
+        .env("XDG_CACHE_HOME", temp.path().join("cache"))
+        .env("HOME", temp.path())
+        .env("SHELL", "/bin/zsh")
+        .arg("init")
+        .assert()
+        .success();
+
+    Command::cargo_bin("dws")
+        .unwrap()
+        .env("XDG_CONFIG_HOME", temp.path())
+        .env("XDG_STATE_HOME", temp.path().join("state"))
+        .env("XDG_CACHE_HOME", temp.path().join("cache"))
+        .env("HOME", temp.path())
+        .arg("use")
+        .arg("missing")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("does not exist"));
 }

@@ -6,11 +6,11 @@
 
 ```
 ~/.config/dws/                # dws workspace root (reserved for tooling)
-  config.toml                 # Workspace configuration (active profile, etc.)
+  config.toml                 # Workspace configuration (active profile + overrides)
   profiles/                   # User profile repositories (git)
     <profile>/
       config/                 # XDG config files → symlinked to ~/.config
-      manifests/              # Tool definitions
+      config.toml             # Profile-local tool definitions
       README.md
 
 ~/.local/state/dws/           # XDG_STATE_HOME (local execution state)
@@ -45,8 +45,8 @@
    - Enables reliable cleanup and drift detection
    - Not checked into git (machine-specific, lives in XDG_STATE_HOME)
 5. **Cache-based storage**: Tools downloaded once to `~/.cache`, symlinked to state
-6. **Version pinning**: Manifests can pin versions, `update` respects pins
-7. **Manifest override precedence**: `tools.toml` defines base defaults → platform manifests (e.g. `tools-macos.toml`) override base → host manifests (`tools-<hostname>.toml`) override platform; each layer only touches the fields it needs.
+6. **Version pinning**: Tool entries in `config.toml` can pin versions, and `update` respects those pins.
+7. **Tool override precedence**: Profile `config.toml` files define the base set; the workspace-level `$XDG_CONFIG_HOME/dws/config.toml` can add or replace entire entries that match the current platform/host filters.
 8. **Wrapper scripts only when needed**: For tools requiring LD_LIBRARY_PATH, etc.
 9. **Profile management commands**: `dws clone`, `dws use`, and `dws profiles` manage the lifecycle of profiles under `profiles/`.
 
@@ -137,26 +137,29 @@ target = "/Users/user/.local/state/dws/bin/fd"
 - Detects drift (symlinks changed/removed outside dws)
 - Generated/updated on `dws init`, `dws sync`, `dws update`
 
-## Manifest Format
+## `config.toml` Format
 
 ```toml
-# ~/.config/dws/profiles/<profile>/manifests/tools.toml
+# ~/.config/dws/profiles/<profile>/config.toml
 
-[ripgrep]
+[tools.ripgrep]
 installer = "ubi"
 project = "BurntSushi/ripgrep"
-version = "14.0.0"              # Pin version (optional)
-bin = ["rg"]
-symlinks = [
-  "doc/rg.1:${STATE_DIR}/share/man/man1/rg.1",
-  "complete/_rg:${STATE_DIR}/share/zsh/site-functions/_rg"
-]
+platform = ["macos", "linux"]
 
-[rustup]
+[tools.uv]
 installer = "curl"
-url = "https://sh.rustup.rs"
+url = "https://astral.sh/uv/install.sh"
 shell = "sh"
-self_update = true              # Has built-in update mechanism
+self_update = true
+
+# Workspace overrides live in $XDG_CONFIG_HOME/dws/config.toml and
+# replace entire tool entries when names match.
+#
+# [tools.ripgrep]
+# installer = "ubi"
+# project = "BurntSushi/ripgrep"
+# version = "latest"
 ```
 
 ### Field Reference
@@ -166,13 +169,20 @@ self_update = true              # Has built-in update mechanism
 - `version` — Explicit version pin; omit for backend default/latest.
 - `url` — Direct download endpoint for script or disk image installers.
 - `shell` — Interpreter for installer scripts (e.g. `sh`, `bash`).
-- `bin` — Executables to link into the workspace `bin/` directory.
+- `bin` — Executables to link into the workspace `bin/` directory (defaults to the release binary name for `ubi` when omitted).
 - `symlinks` — Extra files to link, using `source:target` syntax.
 - `app` — macOS `.app` bundle name extracted from a DMG.
 - `team_id` — Apple Developer team identifier for notarization verification.
 - `self_update` — Set to `true` for tools that maintain themselves; they will be skipped by `dws update`.
+- `platform` — Optional array of platform tags. Tags use `std::env::consts::OS` values (`macos`, `linux`) plus distro-specific slugs like `linux-ubuntu` and `linux-debian` derived from `/etc/os-release`. Arch sub-tags (e.g. `macos-aarch64`) are also available. Windows is not supported; use WSL when necessary.
+- `hosts` — Optional array of sanitized hostnames. Values are compared case-insensitively after converting non-alphanumeric characters to `-`.
 
-Manifests load in precedence order: base (`tools.toml`) → platform (e.g. `tools-macos.toml`) → host-specific overrides (`tools-<hostname>.toml`). Higher-precedence manifests can override any subset of fields while inheriting unspecified values. When the hostname cannot be converted to a slug, dws falls back to `tools-local.toml`.
+### Precedence & Layering
+
+1. **Profile `config.toml`** — committed alongside the profile repository; establishes the default tool set for that profile.
+2. **Workspace `config.toml`** — stored at `$XDG_CONFIG_HOME/dws/config.toml`; may add new tools or replace entire tool entries from the active profile. Workspace entries only apply when their platform/host filters match the current machine.
+
+Because overrides replace entire entries, workspace files must restate every field they care about. This keeps layering predictable and avoids partially merged tool definitions.
 
 ## Key Workflows
 

@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 /// Developer Workspace - Personal development workspace manager
 ///
 /// dws manages your dotfiles and development tools through declarative
-/// manifests. Bootstrap new machines, sync configurations, and maintain your
+/// `config.toml` configuration files. Bootstrap new machines, sync configurations, and maintain your
 /// workspace with a single portable binary.
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]

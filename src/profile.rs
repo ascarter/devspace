@@ -26,7 +26,7 @@ impl Profile {
         self.root.join("config")
     }
 
-    pub fn manifests_dir(&self) -> PathBuf {
-        self.root.join("manifests")
+    pub fn config_file(&self) -> PathBuf {
+        self.root.join("config.toml")
     }
 }

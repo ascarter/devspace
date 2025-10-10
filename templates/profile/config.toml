@@ -1,0 +1,38 @@
+# Tools defined here install into $XDG_STATE_HOME/dws/bin and are cached in
+# $XDG_CACHE_HOME/dws/apps. Uncomment the entries you want to provision as part
+# of this profile.
+#
+# An entry applies on every machine unless you specify filters:
+#   platform = ["macos", "linux", "linux-ubuntu"]  # matches current OS/distro
+#   hosts = ["work-laptop"]                        # matches sanitized hostname
+#
+# When multiple files define the same tool, the higher-precedence file replaces
+# the entire entry. Workspace overrides live in $XDG_CONFIG_HOME/dws/config.toml.
+
+# [tools.ripgrep]
+# installer = "ubi"
+# project = "BurntSushi/ripgrep"
+# version = "14.0.0"  # Optional pin
+
+# [tools.fd]
+# installer = "ubi"
+# project = "sharkdp/fd"
+
+# [tools.bat]
+# installer = "ubi"
+# project = "sharkdp/bat"
+
+# [tools.rustup]
+# installer = "curl"
+# url = "https://sh.rustup.rs"
+# shell = "sh"
+# self_update = true
+
+# [tools.uv]
+# installer = "curl"
+# url = "https://astral.sh/uv/install.sh"
+# shell = "sh"
+
+# [tools.fnm]
+# installer = "ubi"
+# project = "Schniz/fnm"
