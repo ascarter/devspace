@@ -118,6 +118,14 @@ impl Lockfile {
     pub fn tool_symlinks(&self) -> impl Iterator<Item = &ToolEntry> {
         self.tool_symlinks.iter()
     }
+
+    /// Retain only tool symlink entries that satisfy the provided predicate.
+    pub fn retain_tool_symlinks<F>(&mut self, mut predicate: F)
+    where
+        F: FnMut(&ToolEntry) -> bool,
+    {
+        self.tool_symlinks.retain(|entry| predicate(entry));
+    }
 }
 
 #[cfg(test)]
@@ -221,5 +229,29 @@ mod tests {
         assert_eq!(tool_entries[0].version, "14.0.0");
         assert_eq!(tool_entries[1].name, "fd");
         assert_eq!(tool_entries[1].version, "9.0.0");
+    }
+
+    #[test]
+    fn test_lockfile_retain_tool_symlinks() {
+        let mut lockfile = Lockfile::new();
+
+        lockfile.add_tool_symlink(
+            "rg".to_string(),
+            "14.0.0".to_string(),
+            PathBuf::from("/cache/rg"),
+            PathBuf::from("/bin/rg"),
+        );
+        lockfile.add_tool_symlink(
+            "fd".to_string(),
+            "9.0.0".to_string(),
+            PathBuf::from("/cache/fd"),
+            PathBuf::from("/bin/fd"),
+        );
+
+        lockfile.retain_tool_symlinks(|entry| entry.name != "fd");
+
+        let tool_entries: Vec<_> = lockfile.tool_symlinks().collect();
+        assert_eq!(tool_entries.len(), 1);
+        assert_eq!(tool_entries[0].name, "rg");
     }
 }

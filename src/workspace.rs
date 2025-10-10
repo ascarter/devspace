@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use chrono::Utc;
 use std::collections::HashSet;
 use std::env;
 use std::fs;
@@ -8,9 +9,9 @@ use crate::config::{default_profile_name, Config};
 use crate::dotfiles::Dotfiles;
 use crate::environment::{Environment, Shell};
 use crate::installers::{self, InstallContext, ToolInstaller};
-use crate::lockfile::Lockfile;
+use crate::lockfile::{Lockfile, ToolEntry as LockfileToolEntry};
 use crate::profile::Profile;
-use crate::toolset::ToolSet;
+use crate::toolset::{ToolDefinition, ToolSet};
 use tokio::runtime::Runtime;
 
 /// Template file definition for workspace initialization
@@ -561,11 +562,7 @@ impl Workspace {
         ToolSet::load(&profile_root, &workspace_config)
     }
 
-    /// Install the workspace (symlink configs, install tools)
-    pub fn install(&self) -> Result<()> {
-        let tools = self.tools()?;
-
-        // Ensure cache directory exists before installing assets
+    fn prepare_tool_install_context(&self) -> Result<InstallContext> {
         let cache_dir = self.path(WorkspacePath::Cache);
         fs::create_dir_all(&cache_dir)
             .with_context(|| format!("Failed to create cache directory {:?}", cache_dir))?;
@@ -574,7 +571,6 @@ impl Workspace {
             format!("Failed to create cache apps directory {:?}", cache_apps_dir)
         })?;
 
-        // Ensure state directories exist before installing assets
         let bin_dir = self.path(WorkspacePath::Bin);
         fs::create_dir_all(&bin_dir)
             .with_context(|| format!("Failed to create bin directory {:?}", bin_dir))?;
@@ -594,6 +590,65 @@ impl Workspace {
                 zsh_functions
             )
         })?;
+
+        Ok(InstallContext {
+            cache_apps_dir,
+            bin_dir,
+        })
+    }
+
+    fn build_tool_tasks(
+        &self,
+        definitions: Vec<(String, ToolDefinition)>,
+        context: &InstallContext,
+    ) -> Result<Vec<(String, Box<dyn ToolInstaller>)>> {
+        let mut tasks = Vec::new();
+
+        for (name, definition) in definitions {
+            match installers::create_installer(&definition, context.clone())? {
+                Some(installer) => tasks.push((name, installer)),
+                None => println!(
+                    "Skipping tool '{}' - installer '{}' is not yet supported",
+                    name, definition.installer
+                ),
+            }
+        }
+
+        Ok(tasks)
+    }
+
+    fn execute_tool_tasks(
+        &self,
+        tasks: Vec<(String, Box<dyn ToolInstaller>)>,
+        lockfile: &mut Lockfile,
+    ) -> Result<Vec<String>> {
+        if tasks.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let needs_runtime = tasks
+            .iter()
+            .any(|(_, installer)| installer.requires_runtime());
+
+        let mut runtime = if needs_runtime {
+            Some(Runtime::new().context("Failed to create Tokio runtime")?)
+        } else {
+            None
+        };
+
+        let mut updated = Vec::new();
+
+        for (name, installer) in tasks {
+            installer.install(runtime.as_mut(), lockfile)?;
+            updated.push(name);
+        }
+
+        Ok(updated)
+    }
+
+    /// Install the workspace (symlink configs, install tools)
+    pub fn install(&self) -> Result<()> {
+        let tools = self.tools()?;
 
         // Load or create lockfile
         let lockfile_path = self.path(WorkspacePath::Lockfile);
@@ -615,41 +670,122 @@ impl Workspace {
             lockfile.add_config_symlink(entry.source.clone(), entry.target.clone());
         }
 
-        let install_context = InstallContext {
-            cache_apps_dir: cache_apps_dir.clone(),
-            bin_dir: bin_dir.clone(),
-        };
+        let install_context = self.prepare_tool_install_context()?;
 
-        let mut installers: Vec<Box<dyn ToolInstaller>> = Vec::new();
-
-        for (_, entry) in tools.iter() {
-            match installers::create_installer(&entry.definition, install_context.clone())? {
-                Some(installer) => installers.push(installer),
-                None => println!(
-                    "Skipping tool '{}' - installer '{}' is not yet supported",
-                    entry.definition.name, entry.definition.installer
-                ),
-            }
-        }
-
-        let mut runtime = if installers
+        let definitions: Vec<(String, ToolDefinition)> = tools
             .iter()
-            .any(|installer| installer.requires_runtime())
-        {
-            Some(Runtime::new().context("Failed to create Tokio runtime")?)
-        } else {
-            None
-        };
+            .map(|(name, entry)| (name.clone(), entry.definition.clone()))
+            .collect();
 
-        for installer in installers {
-            installer.install(runtime.as_mut(), &mut lockfile)?;
-        }
+        let tasks = self.build_tool_tasks(definitions, &install_context)?;
+        let _ = self.execute_tool_tasks(tasks, &mut lockfile)?;
 
         self.prune_unused_bin(&lockfile)?;
         self.prune_unused_cache(&lockfile)?;
 
         // Save lockfile
+        lockfile.metadata.installed_at = Utc::now().to_rfc3339();
         lockfile.save(&lockfile_path)?;
+
+        Ok(())
+    }
+
+    /// Update installed tools, respecting version pins and the `self_update` flag.
+    pub fn update_tools(&self, requested: Option<&str>) -> Result<()> {
+        let tools = self.tools()?;
+        if tools.is_empty() {
+            println!("No tools defined for the active profile.");
+            return Ok(());
+        }
+
+        let mut selected: Vec<(&str, &crate::toolset::ToolEntry)> = Vec::new();
+        if let Some(tool_name) = requested {
+            if let Some(entry) = tools.entries().get(tool_name) {
+                selected.push((tool_name, entry));
+            } else {
+                anyhow::bail!(
+                    "Tool '{}' is not defined for the active profile or workspace overrides.",
+                    tool_name
+                );
+            }
+        } else {
+            selected.extend(tools.iter().map(|(name, entry)| (name.as_str(), entry)));
+        }
+
+        let mut candidates = Vec::new();
+        for (name, entry) in selected {
+            if entry.definition.self_update {
+                println!(
+                    "Skipping '{}' because it maintains itself (self_update = true).",
+                    name
+                );
+                continue;
+            }
+
+            if let Some(version) = entry.definition.version.as_deref() {
+                println!(
+                    "Skipping '{}' because it is pinned to version '{}'.",
+                    name, version
+                );
+                continue;
+            }
+
+            candidates.push((name.to_string(), entry.definition.clone()));
+        }
+
+        if candidates.is_empty() {
+            println!("No tools eligible for update.");
+            return Ok(());
+        }
+
+        let install_context = self.prepare_tool_install_context()?;
+
+        let tasks = self.build_tool_tasks(candidates, &install_context)?;
+
+        if tasks.is_empty() {
+            println!("No installers available for the selected tools.");
+            return Ok(());
+        }
+
+        let task_names: Vec<String> = tasks.iter().map(|(name, _)| name.clone()).collect();
+
+        let lockfile_path = self.path(WorkspacePath::Lockfile);
+        let mut lockfile = if lockfile_path.exists() {
+            Lockfile::load(&lockfile_path)?
+        } else {
+            Lockfile::new()
+        };
+
+        for name in &task_names {
+            let prior_entries: Vec<LockfileToolEntry> = lockfile
+                .tool_symlinks()
+                .filter(|entry| entry.name == *name)
+                .cloned()
+                .collect();
+            self.remove_tool_symlink_entries(&prior_entries)?;
+            lockfile.retain_tool_symlinks(|entry| entry.name != *name);
+        }
+
+        for name in &task_names {
+            println!("Updating '{}'...", name);
+        }
+
+        let updated = self
+            .execute_tool_tasks(tasks, &mut lockfile)
+            .context("Failed to update selected tools")?;
+
+        for name in &updated {
+            println!("Updated '{}'.", name);
+        }
+
+        self.prune_unused_bin(&lockfile)?;
+        self.prune_unused_cache(&lockfile)?;
+
+        lockfile.metadata.installed_at = Utc::now().to_rfc3339();
+        lockfile.save(&lockfile_path)?;
+
+        let summary = updated.join(", ");
+        println!("Updated {} tool(s): {}", updated.len(), summary);
 
         Ok(())
     }
@@ -679,6 +815,17 @@ impl Workspace {
             fs::remove_dir_all(&self.cache_dir).with_context(|| {
                 format!("Failed to remove cache directory {:?}", self.cache_dir)
             })?;
+        }
+
+        Ok(())
+    }
+
+    fn remove_tool_symlink_entries(&self, entries: &[LockfileToolEntry]) -> Result<()> {
+        for entry in entries {
+            if entry.target.exists() || entry.target.symlink_metadata().is_ok() {
+                fs::remove_file(&entry.target)
+                    .with_context(|| format!("Failed to remove tool symlink {:?}", entry.target))?;
+            }
         }
 
         Ok(())
@@ -800,6 +947,7 @@ impl Workspace {
 mod tests {
     use super::*;
     use crate::config::default_profile_name;
+    use crate::lockfile::ToolEntry as LockfileToolEntry;
     use crate::toolset::InstallerKind;
     use rstest::rstest;
     use serial_test::serial;
@@ -921,6 +1069,54 @@ project = "BurntSushi/ripgrep"
         // Verify lockfile contents
         let lockfile = Lockfile::load(&workspace.path(WorkspacePath::Lockfile)).unwrap();
         assert_eq!(lockfile.config_symlinks.len(), 1);
+    }
+
+    #[test]
+    #[serial]
+    fn test_remove_tool_symlink_entries() {
+        let _temp = setup_test_env();
+        let workspace = Workspace::new().unwrap();
+
+        let bin_dir = workspace.path(WorkspacePath::Bin);
+        fs::create_dir_all(&bin_dir).unwrap();
+        let target = bin_dir.join("rg");
+        fs::write(&target, "dummy").unwrap();
+
+        let entries = vec![LockfileToolEntry {
+            name: "rg".to_string(),
+            version: "14.0.0".to_string(),
+            source: PathBuf::from("/cache/apps/rg/14.0.0/rg"),
+            target: target.clone(),
+        }];
+
+        workspace.remove_tool_symlink_entries(&entries).unwrap();
+        assert!(!target.exists());
+    }
+
+    #[test]
+    #[serial]
+    fn test_update_tools_skips_pinned() {
+        let _temp = setup_test_env();
+        let workspace = Workspace::new().unwrap();
+
+        let profile_config = workspace.path(WorkspacePath::ProfileConfig);
+        if let Some(parent) = profile_config.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(
+            &profile_config,
+            r#"
+[tools.ripgrep]
+installer = "ubi"
+project = "BurntSushi/ripgrep"
+version = "14.0.0"
+"#,
+        )
+        .unwrap();
+
+        workspace.update_tools(None).unwrap();
+
+        assert!(!workspace.path(WorkspacePath::Lockfile).exists());
     }
 
     #[test]
