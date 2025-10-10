@@ -1,5 +1,5 @@
 # Tools defined here install into $XDG_STATE_HOME/dws/bin and are cached in
-# $XDG_CACHE_HOME/dws/apps. Uncomment the entries you want to provision as part
+# $XDG_CACHE_HOME/dws/tools. Uncomment the entries you want to provision as part
 # of this profile.
 #
 # An entry applies on every machine unless you specify filters:

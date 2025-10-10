@@ -10,7 +10,7 @@ pub(crate) use ubi::UbiInstaller;
 
 #[derive(Clone, Debug)]
 pub(crate) struct InstallContext {
-    pub cache_apps_dir: PathBuf,
+    pub cache_tools_dir: PathBuf,
     pub bin_dir: PathBuf,
 }
 
@@ -87,7 +87,7 @@ mod tests {
 
     fn default_context() -> InstallContext {
         InstallContext {
-            cache_apps_dir: PathBuf::from("/tmp/cache/apps"),
+            cache_tools_dir: PathBuf::from("/tmp/cache/tools"),
             bin_dir: PathBuf::from("/tmp/state/bin"),
         }
     }

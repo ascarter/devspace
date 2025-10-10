@@ -21,7 +21,7 @@
     zsh/site-functions/
 
 ~/.cache/dws/                 # XDG_CACHE_HOME (downloaded binaries)
-  apps/
+  tools/
     <tool>/<version>/         # Actual binaries (can be cleared/rebuilt)
 ```
 
@@ -120,13 +120,13 @@ target = "/Users/user/.config/nvim/init.lua"
 [[tool_symlinks]]
 name = "rg"
 version = "14.0.0"
-source = "/Users/user/.cache/dws/apps/ripgrep/14.0.0/rg"
+source = "/Users/user/.cache/dws/tools/ripgrep/14.0.0/rg"
 target = "/Users/user/.local/state/dws/bin/rg"
 
 [[tool_symlinks]]
 name = "fd"
 version = "9.0.0"
-source = "/Users/user/.cache/dws/apps/fd/9.0.0/fd"
+source = "/Users/user/.cache/dws/tools/fd/9.0.0/fd"
 target = "/Users/user/.local/state/dws/bin/fd"
 ```
 

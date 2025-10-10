@@ -566,9 +566,12 @@ impl Workspace {
         let cache_dir = self.path(WorkspacePath::Cache);
         fs::create_dir_all(&cache_dir)
             .with_context(|| format!("Failed to create cache directory {:?}", cache_dir))?;
-        let cache_apps_dir = cache_dir.join("apps");
-        fs::create_dir_all(&cache_apps_dir).with_context(|| {
-            format!("Failed to create cache apps directory {:?}", cache_apps_dir)
+        let cache_tools_dir = cache_dir.join("tools");
+        fs::create_dir_all(&cache_tools_dir).with_context(|| {
+            format!(
+                "Failed to create cache tools directory {:?}",
+                cache_tools_dir
+            )
         })?;
 
         let bin_dir = self.path(WorkspacePath::Bin);
@@ -592,7 +595,7 @@ impl Workspace {
         })?;
 
         Ok(InstallContext {
-            cache_apps_dir,
+            cache_tools_dir,
             bin_dir,
         })
     }
@@ -855,11 +858,12 @@ impl Workspace {
 
     /// Remove cached tool versions that no longer have symlinks tracked in the lockfile.
     ///
-    /// The cache is organised as $XDG_CACHE_HOME/dws/apps/<tool>/<version>. The lockfile stores the
+    /// The cache is organised as $XDG_CACHE_HOME/dws/tools/<tool>/<version>. The lockfile stores the
     /// fully qualified path to the version directory. Anything not referenced gets pruned.
     fn prune_unused_cache(&self, lockfile: &Lockfile) -> Result<()> {
-        let apps_dir = self.path(WorkspacePath::Cache).join("apps");
-        if !apps_dir.exists() {
+        let cache_dir = self.path(WorkspacePath::Cache);
+        let tools_dir = cache_dir.join("tools");
+        if !tools_dir.exists() {
             return Ok(());
         }
 
@@ -868,8 +872,8 @@ impl Workspace {
             .filter_map(|entry| entry.source.parent().map(Path::to_path_buf))
             .collect();
 
-        for tool_entry in fs::read_dir(&apps_dir)
-            .with_context(|| format!("Failed to read cache directory {:?}", apps_dir))?
+        for tool_entry in fs::read_dir(&tools_dir)
+            .with_context(|| format!("Failed to read cache directory {:?}", tools_dir))?
         {
             let tool_entry = tool_entry?;
             let tool_path = tool_entry.path();
@@ -1085,7 +1089,7 @@ project = "BurntSushi/ripgrep"
         let entries = vec![LockfileToolEntry {
             name: "rg".to_string(),
             version: "14.0.0".to_string(),
-            source: PathBuf::from("/cache/apps/rg/14.0.0/rg"),
+            source: PathBuf::from("/cache/tools/rg/14.0.0/rg"),
             target: target.clone(),
         }];
 

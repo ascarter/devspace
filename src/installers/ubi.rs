@@ -37,7 +37,7 @@ impl UbiInstaller {
             .unwrap_or_else(|| "latest".to_string());
 
         let install_root = context
-            .cache_apps_dir
+            .cache_tools_dir
             .join(sanitize_component(&definition.name))
             .join(sanitize_component(&version_label));
 
