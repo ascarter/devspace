@@ -19,15 +19,24 @@ pub(crate) trait ToolInstaller {
     fn install(&self, runtime: Option<&mut Runtime>, lockfile: &mut Lockfile) -> Result<()>;
 }
 
+pub(crate) struct InstallerDispatch {
+    pub installer: Box<dyn ToolInstaller>,
+    pub resolved_version: Option<String>,
+}
+
 pub(crate) fn create_installer(
     definition: &ToolDefinition,
     context: InstallContext,
-) -> Result<Option<Box<dyn ToolInstaller>>> {
+) -> Result<Option<InstallerDispatch>> {
     match definition.installer {
-        InstallerKind::Ubi => Ok(Some(Box::new(UbiInstaller::new(
-            definition.clone(),
-            context,
-        )?))),
+        InstallerKind::Ubi => {
+            let installer = UbiInstaller::new(definition.clone(), context)?;
+            let resolved_version = Some(installer.resolved_version().to_string());
+            Ok(Some(InstallerDispatch {
+                installer: Box::new(installer),
+                resolved_version,
+            }))
+        }
         _ => Ok(None),
     }
 }
@@ -105,6 +114,9 @@ mod tests {
 
         let result = create_installer(&definition, context).unwrap();
         assert_eq!(result.is_some(), expected_some);
+        if let Some(dispatch) = result {
+            assert_eq!(dispatch.resolved_version.as_deref(), Some("1.0.0"));
+        }
     }
 
     #[test]

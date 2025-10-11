@@ -1,9 +1,9 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::config::{default_profile_name, Config};
 use crate::dotfiles::Dotfiles;
@@ -80,6 +80,17 @@ pub enum WorkspacePath {
     Cache,
     /// Workspace config file path
     ConfigFile,
+}
+
+struct ToolInstallTask {
+    name: String,
+    resolved_version: Option<String>,
+    installer: Box<dyn ToolInstaller>,
+}
+
+struct UpdatedTool {
+    name: String,
+    version: Option<String>,
 }
 
 /// Workspace - represents the dws installation
@@ -604,12 +615,16 @@ impl Workspace {
         &self,
         definitions: Vec<(String, ToolDefinition)>,
         context: &InstallContext,
-    ) -> Result<Vec<(String, Box<dyn ToolInstaller>)>> {
+    ) -> Result<Vec<ToolInstallTask>> {
         let mut tasks = Vec::new();
 
         for (name, definition) in definitions {
             match installers::create_installer(&definition, context.clone())? {
-                Some(installer) => tasks.push((name, installer)),
+                Some(dispatch) => tasks.push(ToolInstallTask {
+                    name,
+                    resolved_version: dispatch.resolved_version,
+                    installer: dispatch.installer,
+                }),
                 None => println!(
                     "Skipping tool '{}' - installer '{}' is not yet supported",
                     name, definition.installer
@@ -622,16 +637,14 @@ impl Workspace {
 
     fn execute_tool_tasks(
         &self,
-        tasks: Vec<(String, Box<dyn ToolInstaller>)>,
+        tasks: Vec<ToolInstallTask>,
         lockfile: &mut Lockfile,
-    ) -> Result<Vec<String>> {
+    ) -> Result<Vec<UpdatedTool>> {
         if tasks.is_empty() {
             return Ok(Vec::new());
         }
 
-        let needs_runtime = tasks
-            .iter()
-            .any(|(_, installer)| installer.requires_runtime());
+        let needs_runtime = tasks.iter().any(|task| task.installer.requires_runtime());
 
         let mut runtime = if needs_runtime {
             Some(Runtime::new().context("Failed to create Tokio runtime")?)
@@ -641,9 +654,18 @@ impl Workspace {
 
         let mut updated = Vec::new();
 
-        for (name, installer) in tasks {
+        for task in tasks {
+            let ToolInstallTask {
+                name,
+                resolved_version,
+                installer,
+            } = task;
+
             installer.install(runtime.as_mut(), lockfile)?;
-            updated.push(name);
+            updated.push(UpdatedTool {
+                name,
+                version: resolved_version,
+            });
         }
 
         Ok(updated)
@@ -750,8 +772,6 @@ impl Workspace {
             return Ok(());
         }
 
-        let task_names: Vec<String> = tasks.iter().map(|(name, _)| name.clone()).collect();
-
         let lockfile_path = self.path(WorkspacePath::Lockfile);
         let mut lockfile = if lockfile_path.exists() {
             Lockfile::load(&lockfile_path)?
@@ -759,7 +779,57 @@ impl Workspace {
             Lockfile::new()
         };
 
-        for name in &task_names {
+        let mut current_entries: HashMap<String, Vec<LockfileToolEntry>> = HashMap::new();
+        for entry in lockfile.tool_symlinks() {
+            current_entries
+                .entry(entry.name.clone())
+                .or_default()
+                .push(entry.clone());
+        }
+
+        let mut filtered_tasks = Vec::new();
+        for task in tasks {
+            if let Some(resolved) = &task.resolved_version {
+                if let Some(entries) = current_entries.get(&task.name) {
+                    let version_matches = entries.iter().all(|entry| entry.version == *resolved);
+                    let missing_paths = entries.iter().any(|entry| {
+                        !entry.source.exists()
+                            || !entry.target.exists()
+                            || entry
+                                .target
+                                .symlink_metadata()
+                                .map(|meta| !meta.file_type().is_symlink())
+                                .unwrap_or(true)
+                    });
+
+                    if version_matches && !missing_paths {
+                        println!(
+                            "'{}' is already at version '{}'; skipping.",
+                            task.name, resolved
+                        );
+                        continue;
+                    } else if version_matches && missing_paths {
+                        println!(
+                            "'{}' is already at version '{}' but required files are missing; reinstalling.",
+                            task.name, resolved
+                        );
+                    }
+                }
+            }
+            filtered_tasks.push(task);
+        }
+
+        if filtered_tasks.is_empty() {
+            println!("All tools are up to date.");
+            return Ok(());
+        }
+
+        let names_to_update: Vec<String> = filtered_tasks
+            .iter()
+            .map(|task| task.name.clone())
+            .collect();
+
+        for name in &names_to_update {
             let prior_entries: Vec<LockfileToolEntry> = lockfile
                 .tool_symlinks()
                 .filter(|entry| entry.name == *name)
@@ -769,16 +839,20 @@ impl Workspace {
             lockfile.retain_tool_symlinks(|entry| entry.name != *name);
         }
 
-        for name in &task_names {
+        for name in &names_to_update {
             println!("Updating '{}'...", name);
         }
 
         let updated = self
-            .execute_tool_tasks(tasks, &mut lockfile)
+            .execute_tool_tasks(filtered_tasks, &mut lockfile)
             .context("Failed to update selected tools")?;
 
-        for name in &updated {
-            println!("Updated '{}'.", name);
+        for update in &updated {
+            if let Some(version) = &update.version {
+                println!("Updated '{}' to {}.", update.name, version);
+            } else {
+                println!("Updated '{}'.", update.name);
+            }
         }
 
         self.prune_unused_bin(&lockfile)?;
@@ -787,7 +861,18 @@ impl Workspace {
         lockfile.metadata.installed_at = Utc::now().to_rfc3339();
         lockfile.save(&lockfile_path)?;
 
-        let summary = updated.join(", ");
+        let summary = updated
+            .iter()
+            .map(|update| {
+                if let Some(version) = &update.version {
+                    format!("{} ({})", update.name, version)
+                } else {
+                    update.name.clone()
+                }
+            })
+            .collect::<Vec<String>>()
+            .join(", ");
+
         println!("Updated {} tool(s): {}", updated.len(), summary);
 
         Ok(())
@@ -867,10 +952,23 @@ impl Workspace {
             return Ok(());
         }
 
-        let in_use: HashSet<PathBuf> = lockfile
-            .tool_symlinks()
-            .filter_map(|entry| entry.source.parent().map(Path::to_path_buf))
-            .collect();
+        let mut in_use: HashSet<PathBuf> = HashSet::new();
+        for entry in lockfile.tool_symlinks() {
+            let mut current = entry.source.parent();
+            while let Some(dir) = current {
+                if !dir.starts_with(&tools_dir) {
+                    break;
+                }
+
+                in_use.insert(dir.to_path_buf());
+
+                if dir == tools_dir {
+                    break;
+                }
+
+                current = dir.parent();
+            }
+        }
 
         for tool_entry in fs::read_dir(&tools_dir)
             .with_context(|| format!("Failed to read cache directory {:?}", tools_dir))?

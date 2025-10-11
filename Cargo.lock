@@ -524,6 +524,7 @@ dependencies = [
  "directories",
  "git2",
  "predicates",
+ "reqwest",
  "rstest",
  "serde",
  "serial_test",
@@ -534,6 +535,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "ubi",
+ "url",
  "walkdir",
  "whoami",
 ]
@@ -1700,6 +1702,7 @@ dependencies = [
  "async-compression",
  "base64",
  "bytes",
+ "futures-channel",
  "futures-core",
  "futures-util",
  "http",
