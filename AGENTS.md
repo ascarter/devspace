@@ -61,6 +61,7 @@ This document is the single source of truth for AI and human collaborators who a
 - Prefer expressive error types over `anyhow::Error` when feasible.
 - Avoid `unsafe` unless explicitly approved.
 - Document public APIs with rustdoc comments that cover invariants and side effects.
+- Keep `src/commands/*` modules wafer-thin: parse CLI flags and call into `Workspace`/library code. Business logic lives in the library just like the Go `cmd` pattern.
 
 ## Testing Guidelines
 

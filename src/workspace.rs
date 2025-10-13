@@ -1,8 +1,13 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
+use git2::{
+    build::CheckoutBuilder, ErrorCode, Object, ObjectType, Repository, ResetType, Status,
+    StatusOptions,
+};
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
+use std::io::{self, Write};
 use std::path::PathBuf;
 
 use crate::config::{default_profile_name, Config};
@@ -91,6 +96,13 @@ struct ToolInstallTask {
 struct UpdatedTool {
     name: String,
     version: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct EnvironmentExport {
+    pub shell: Shell,
+    pub script: String,
+    pub defaulted: bool,
 }
 
 /// Workspace - represents the dws installation
@@ -212,6 +224,31 @@ impl Workspace {
 
     pub fn active_profile_name(&self) -> &str {
         self.workspace_config.active_profile()
+    }
+
+    pub fn init_with_shell(
+        &mut self,
+        repository: Option<&str>,
+        shell: Option<&str>,
+        profile: Option<&str>,
+    ) -> Result<()> {
+        let shell = match shell {
+            Some(name) => name.to_string(),
+            None => Self::detect_shell_from_env()?,
+        };
+
+        self.init(repository, &shell, profile)
+    }
+
+    fn detect_shell_from_env() -> Result<String> {
+        env::var("SHELL")
+            .ok()
+            .and_then(|s| s.rsplit('/').next().map(str::to_string))
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "SHELL environment variable not set. Please specify shell with --shell flag."
+                )
+            })
     }
 
     pub fn list_profiles(&self) -> Result<Vec<String>> {
@@ -566,6 +603,26 @@ impl Workspace {
         Environment::new_from_workspace(self, shell)
     }
 
+    pub fn environment_export(&self, shell: &str) -> Result<EnvironmentExport> {
+        if !self.exists() {
+            anyhow::bail!("Workspace not initialized. Run: dws init [repo]");
+        }
+
+        let (resolved, defaulted) = match Shell::from_name(shell) {
+            Some(shell) => (shell, false),
+            None => (Shell::Zsh, true),
+        };
+
+        let env = self.environment(resolved)?;
+        let script = env.format_for_shell(resolved);
+
+        Ok(EnvironmentExport {
+            shell: resolved,
+            script,
+            defaulted,
+        })
+    }
+
     /// Load tool definitions defined for this workspace.
     pub fn tools(&self) -> Result<ToolSet> {
         let profile_root = self.path(WorkspacePath::Profile);
@@ -703,7 +760,14 @@ impl Workspace {
             .collect();
 
         let tasks = self.build_tool_tasks(definitions, &install_context)?;
-        let _ = self.execute_tool_tasks(tasks, &mut lockfile)?;
+        if tasks.is_empty() {
+            println!("No tools defined for the active profile.");
+        } else {
+            for task in tasks.iter() {
+                println!("Installing tool '{}'...", task.name);
+            }
+        }
+        let installed = self.execute_tool_tasks(tasks, &mut lockfile)?;
 
         self.prune_unused_bin(&lockfile)?;
         self.prune_unused_cache(&lockfile)?;
@@ -711,6 +775,19 @@ impl Workspace {
         // Save lockfile
         lockfile.metadata.installed_at = Utc::now().to_rfc3339();
         lockfile.save(&lockfile_path)?;
+
+        if !installed.is_empty() {
+            let summary = installed
+                .iter()
+                .map(|update| match &update.version {
+                    Some(version) => format!("{} ({})", update.name, version),
+                    None => update.name.clone(),
+                })
+                .collect::<Vec<String>>()
+                .join(", ");
+
+            println!("Installed {} tool(s): {}", installed.len(), summary);
+        }
 
         Ok(())
     }
@@ -875,6 +952,59 @@ impl Workspace {
 
         println!("Updated {} tool(s): {}", updated.len(), summary);
 
+        Ok(())
+    }
+
+    /// Reset workspace state and active profile repository.
+    pub fn reset(&self, force: bool) -> Result<()> {
+        let profile_path = self.path(WorkspacePath::Profile);
+
+        if !profile_path.exists() {
+            anyhow::bail!(
+                "Active profile at {:?} does not exist. Run 'dws init' first.",
+                profile_path
+            );
+        }
+
+        let repo = match Repository::open(&profile_path) {
+            Ok(repo) => Some(repo),
+            Err(err) => match err.code() {
+                ErrorCode::NotFound => {
+                    println!(
+                        "Skipping git reset: active profile '{}' is not a git repository.",
+                        self.active_profile_name()
+                    );
+                    None
+                }
+                _ => return Err(err.into()),
+            },
+        };
+
+        if let Some(repo) = repo.as_ref() {
+            if !force {
+                ensure_clean_worktree(repo)?;
+            }
+        }
+
+        if !force && !confirm_reset()? {
+            println!("Reset cancelled.");
+            return Ok(());
+        }
+
+        println!("Uninstalling current workspace...");
+        self.uninstall()
+            .context("Failed to uninstall existing workspace state")?;
+
+        if let Some(repo) = repo {
+            println!("Resetting profile repository at {:?}...", profile_path);
+            reset_repository(repo).context("Failed to reset profile repository")?;
+        }
+
+        println!("Reinstalling workspace...");
+        self.install()
+            .context("Failed to reinstall workspace after reset")?;
+
+        println!("✓ Workspace reset complete.");
         Ok(())
     }
 
@@ -1043,6 +1173,113 @@ impl Workspace {
 
         Ok(())
     }
+}
+
+fn ensure_clean_worktree(repo: &Repository) -> Result<()> {
+    if repo.state() != git2::RepositoryState::Clean {
+        anyhow::bail!("Repository has an in-progress operation (merge, rebase, etc.). Finish it first or re-run with --force.");
+    }
+
+    let mut opts = StatusOptions::new();
+    opts.include_untracked(true)
+        .include_ignored(false)
+        .recurse_untracked_dirs(true);
+
+    let statuses = repo
+        .statuses(Some(&mut opts))
+        .context("Failed to inspect repository status")?;
+
+    let mut dirty_paths: Vec<String> = Vec::new();
+    for entry in statuses.iter() {
+        let status = entry.status();
+        if status.intersects(
+            Status::INDEX_NEW
+                | Status::INDEX_MODIFIED
+                | Status::INDEX_DELETED
+                | Status::INDEX_RENAMED
+                | Status::INDEX_TYPECHANGE
+                | Status::WT_NEW
+                | Status::WT_MODIFIED
+                | Status::WT_DELETED
+                | Status::WT_RENAMED
+                | Status::WT_TYPECHANGE,
+        ) {
+            if let Some(path) = entry.path() {
+                dirty_paths.push(path.to_string());
+            }
+        }
+    }
+
+    if dirty_paths.is_empty() {
+        return Ok(());
+    }
+
+    if dirty_paths.len() > 5 {
+        dirty_paths.truncate(5);
+        dirty_paths.push("…".to_string());
+    }
+
+    anyhow::bail!(
+        "Profile repository has uncommitted changes: {}.\nRe-run with --force to discard local modifications.",
+        dirty_paths.join(", ")
+    );
+}
+
+fn confirm_reset() -> Result<bool> {
+    print!("This will reinstall all tools and dotfiles. Continue? [y/N]: ");
+    io::stdout().flush().context("Failed to flush stdout")?;
+
+    let mut input = String::new();
+    io::stdin()
+        .read_line(&mut input)
+        .context("Failed to read confirmation")?;
+
+    let trimmed = input.trim().to_ascii_lowercase();
+    Ok(trimmed == "y" || trimmed == "yes")
+}
+
+fn reset_repository(repo: Repository) -> Result<()> {
+    if let Err(err) = fetch_remote(&repo) {
+        println!("Warning: failed to fetch 'origin': {err}");
+    }
+
+    let target = determine_reset_target(&repo)?;
+    repo.reset(&target, ResetType::Hard, None)
+        .context("Failed to perform hard reset")?;
+
+    let mut checkout = CheckoutBuilder::new();
+    checkout.force().remove_untracked(true).remove_ignored(true);
+
+    repo.checkout_head(Some(&mut checkout))
+        .context("Failed to clean working tree")?;
+
+    let _ = repo.cleanup_state();
+    Ok(())
+}
+
+fn fetch_remote(repo: &Repository) -> Result<()> {
+    let mut remote = repo
+        .find_remote("origin")
+        .context("Repository has no 'origin' remote")?;
+
+    remote.fetch::<&str>(&[], None, None)?;
+    Ok(())
+}
+
+fn determine_reset_target(repo: &Repository) -> Result<Object<'_>> {
+    let head = repo.head().context("Repository has no HEAD reference")?;
+
+    if head.is_branch() {
+        if let Some(branch) = head.shorthand() {
+            let remote_ref = format!("refs/remotes/origin/{}", branch);
+            if let Ok(obj) = repo.revparse_single(&remote_ref) {
+                return Ok(obj);
+            }
+        }
+    }
+
+    head.peel(ObjectType::Commit)
+        .context("Failed to resolve HEAD commit")
 }
 
 #[cfg(test)]
@@ -1556,5 +1793,65 @@ version = "14.0.0"
         // Verify old symlink removed, new one created
         assert!(!config_home.join("zsh").exists());
         assert!(config_home.join("fish").exists());
+    }
+
+    #[rstest]
+    #[case("/bin/zsh", "zsh")]
+    #[case("/usr/local/bin/bash", "bash")]
+    #[case("fish", "fish")]
+    #[serial]
+    fn test_detect_shell_from_env(#[case] shell_path: &str, #[case] expected: &str) {
+        let previous = env::var("SHELL").ok();
+        env::set_var("SHELL", shell_path);
+        assert_eq!(Workspace::detect_shell_from_env().unwrap(), expected);
+        match previous {
+            Some(value) => env::set_var("SHELL", value),
+            None => env::remove_var("SHELL"),
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_detect_shell_from_env_missing() {
+        let previous = env::var("SHELL").ok();
+        env::remove_var("SHELL");
+        let err = Workspace::detect_shell_from_env().unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("SHELL environment variable not set"));
+        match previous {
+            Some(value) => env::set_var("SHELL", value),
+            None => env::remove_var("SHELL"),
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_environment_export_with_known_shell() {
+        let temp = setup_test_env();
+        let workspace = Workspace::new().unwrap();
+        workspace
+            .ensure_profile_template(workspace.active_profile())
+            .unwrap();
+        let export = workspace.environment_export("bash").unwrap();
+        assert!(!export.defaulted);
+        assert_eq!(export.shell, Shell::Bash);
+        assert!(export.script.contains("export PATH"));
+        drop(temp);
+    }
+
+    #[test]
+    #[serial]
+    fn test_environment_export_defaults_unknown_shell() {
+        let temp = setup_test_env();
+        let workspace = Workspace::new().unwrap();
+        workspace
+            .ensure_profile_template(workspace.active_profile())
+            .unwrap();
+        let export = workspace.environment_export("powershell").unwrap();
+        assert!(export.defaulted);
+        assert_eq!(export.shell, Shell::Zsh);
+        assert!(export.script.contains("export PATH"));
+        drop(temp);
     }
 }

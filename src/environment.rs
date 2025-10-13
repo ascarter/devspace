@@ -11,6 +11,25 @@ pub enum Shell {
     Fish,
 }
 
+impl Shell {
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name.to_lowercase().as_str() {
+            "zsh" => Some(Shell::Zsh),
+            "bash" => Some(Shell::Bash),
+            "fish" => Some(Shell::Fish),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Shell::Zsh => "zsh",
+            Shell::Bash => "bash",
+            Shell::Fish => "fish",
+        }
+    }
+}
+
 /// Shell environment configuration
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Environment {
@@ -140,5 +159,20 @@ mod tests {
         assert!(!output.contains("export")); // fish uses set -gx
         assert!(output.contains("/bin $PATH"));
         assert!(output.contains("/share/man $MANPATH"));
+    }
+
+    #[test]
+    fn test_shell_from_name() {
+        assert_eq!(Shell::from_name("zsh"), Some(Shell::Zsh));
+        assert_eq!(Shell::from_name("BASH"), Some(Shell::Bash));
+        assert_eq!(Shell::from_name("Fish"), Some(Shell::Fish));
+        assert_eq!(Shell::from_name("powershell"), None);
+    }
+
+    #[test]
+    fn test_shell_as_str() {
+        assert_eq!(Shell::Zsh.as_str(), "zsh");
+        assert_eq!(Shell::Bash.as_str(), "bash");
+        assert_eq!(Shell::Fish.as_str(), "fish");
     }
 }
