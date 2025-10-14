@@ -501,7 +501,7 @@ impl Workspace {
             }
         }
 
-        progress.success("Prepared", None);
+        progress.success("Synced", Some("template files up to date".to_string()));
         Ok(())
     }
 
