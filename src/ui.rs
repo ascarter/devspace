@@ -133,7 +133,7 @@ impl Progress {
         let mut combined = self.message.clone();
         if let Some(detail) = detail {
             if !detail.is_empty() {
-                combined.push_str(" ");
+                combined.push(' ');
                 combined.push_str(&detail);
             }
         }
