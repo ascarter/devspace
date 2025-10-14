@@ -2,7 +2,7 @@
 
 > Developer Workspace - Lightweight, portable development environment manager
 
-**dws (Developer Workspace)** manages your dotfiles and development tools through declarative `config.toml` configuration files. Bootstrap new machines, sync configurations, and maintain your dev environment with a single portable binary.
+**dws (Developer Workspace)** manages your dotfiles and development tools through declarative manifests: each profile ships a `dws.toml`, and the workspace can provide overrides in `config.toml`. Bootstrap new machines, sync configurations, and maintain your dev environment with a single portable binary.
 
 ## Status
 
@@ -13,7 +13,7 @@
 A personal dev environment manager optimized for interactive development:
 
 - **Quick bootstrap**: Single binary → full dev environment
-- **Version controlled**: Dotfiles + `config.toml` tool definitions in GitHub
+- **Version controlled**: Dotfiles + profile `dws.toml` tool definitions in GitHub
 - **XDG compliant**: Self-contained, easy to remove
 - **Native tools**: Use rustup/uv/fnm directly, no shims
 - **Single workspace**: One environment per machine/container
@@ -77,7 +77,7 @@ dws use work
 ├── profiles/                 # User-managed profiles (each is a git repo)
 │   ├── default/              # Default profile created by dws init
 │   │   ├── config/           # XDG config files → symlinked to ~/.config
-│   │   └── config.toml       # Profile-level tool definitions
+│   │   └── dws.toml          # Profile-level tool definitions
 │   └── <profile>/            # Additional profiles cloned or created
 └── (state/cache live under $XDG_STATE_HOME/$XDG_CACHE_HOME)
 ```
@@ -88,10 +88,10 @@ dws use work
 - `dws clone <repo> [--profile name]` &mdash; clone another profile into `profiles/<name>` without activating it.
 - `dws use <profile>` &mdash; switch to a profile (symlinks are updated and `$XDG_CONFIG_HOME/dws/config.toml` is rewritten).
 
-### Example `config.toml`
+### Example `dws.toml`
 
 ```toml
-# profiles/<profile>/config.toml
+# profiles/<profile>/dws.toml
 [tools.ripgrep]
 installer = "ubi"
 project = "BurntSushi/ripgrep"
@@ -124,7 +124,7 @@ self_update = true
 
 Tool entries are layered as follows:
 
-1. **Profile `config.toml`** — checked into the profile repository; forms the base definition set.
+1. **Profile `dws.toml`** — checked into the profile repository; forms the base definition set.
 2. **Workspace `config.toml`** — optional overrides stored at `$XDG_CONFIG_HOME/dws/config.toml`. When a tool name appears in both files, the workspace entry replaces the profile entry entirely. Entries that fail platform/host filters are ignored, leaving lower-precedence definitions intact.
 
 ## How It Works

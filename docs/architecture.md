@@ -10,7 +10,7 @@
   profiles/                   # User profile repositories (git)
     <profile>/
       config/                 # XDG config files → symlinked to ~/.config
-      config.toml             # Profile-local tool definitions
+      dws.toml                # Profile-local tool definitions
       README.md
 
 ~/.local/state/dws/           # XDG_STATE_HOME (local execution state)
@@ -45,8 +45,8 @@
    - Enables reliable cleanup and drift detection
    - Not checked into git (machine-specific, lives in XDG_STATE_HOME)
 5. **Cache-based storage**: Tools downloaded once to `~/.cache`, symlinked to state
-6. **Version pinning**: Tool entries in `config.toml` can pin versions, and `update` respects those pins.
-7. **Tool override precedence**: Profile `config.toml` files define the base set; the workspace-level `$XDG_CONFIG_HOME/dws/config.toml` can add or replace entire entries that match the current platform/host filters.
+6. **Version pinning**: Tool entries in `dws.toml` (and workspace overrides) can pin versions, and `update` respects those pins.
+7. **Tool override precedence**: Profile `dws.toml` files define the base set; the workspace-level `$XDG_CONFIG_HOME/dws/config.toml` can add or replace entire entries that match the current platform/host filters.
 8. **Wrapper scripts only when needed**: For tools requiring LD_LIBRARY_PATH, etc.
 9. **Profile management commands**: `dws clone`, `dws use`, and `dws profiles` manage the lifecycle of profiles under `profiles/`.
 
@@ -137,10 +137,10 @@ target = "/Users/user/.local/state/dws/bin/fd"
 - Detects drift (symlinks changed/removed outside dws)
 - Generated/updated on `dws init`, `dws sync`, `dws update`
 
-## `config.toml` Format
+## `dws.toml` Format
 
 ```toml
-# ~/.config/dws/profiles/<profile>/config.toml
+# ~/.config/dws/profiles/<profile>/dws.toml
 
 [tools.ripgrep]
 installer = "ubi"
@@ -179,7 +179,7 @@ self_update = true
 
 ### Precedence & Layering
 
-1. **Profile `config.toml`** — committed alongside the profile repository; establishes the default tool set for that profile.
+1. **Profile `dws.toml`** — committed alongside the profile repository; establishes the default tool set for that profile.
 2. **Workspace `config.toml`** — stored at `$XDG_CONFIG_HOME/dws/config.toml`; may add new tools or replace entire tool entries from the active profile. Workspace entries only apply when their platform/host filters match the current machine.
 
 Because overrides replace entire entries, workspace files must restate every field they care about. This keeps layering predictable and avoids partially merged tool definitions.

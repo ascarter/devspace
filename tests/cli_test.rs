@@ -27,7 +27,7 @@ fn test_init_creates_template() {
     assert!(profile_root.exists());
     assert!(profile_root.join("README.md").exists());
     assert!(profile_root.join("config/zsh/.zshrc").exists());
-    assert!(profile_root.join("config.toml").exists());
+    assert!(profile_root.join("dws.toml").exists());
     assert!(temp.path().join("dws/config.toml").exists());
 }
 

@@ -18,7 +18,7 @@ $XDG_CONFIG_HOME/dws/             # dws workspace root (reserved)
           config.fish
         nvim/
           init.lua
-      config.toml                 # Profile-level tool definitions
+      dws.toml                    # Profile-level tool definitions
       README.md
 ```
 
@@ -43,7 +43,7 @@ dws init yourusername/dotfiles
 ## Customizing
 
 1. Add your dotfiles to `profiles/<profile>/config/` (e.g., `profiles/default/config/zsh/.zshrc`)
-2. Edit `profiles/<profile>/config.toml` to include your preferred tools
+2. Edit `profiles/<profile>/dws.toml` to include your preferred tools
 3. Commit and push changes
 4. Run `dws sync` on other machines to pull updates
 
@@ -53,7 +53,7 @@ dws init yourusername/dotfiles
 - `dws clone <repo> [--profile name]` clones another profile into `profiles/<name>` without activating it.
 - `dws use <profile>` switches the active profile (updates symlinks and `config.toml`).
 
-## Editing `config.toml`
+## Editing `dws.toml`
 
 Each entry under the `[tools.*]` table describes a single tool. Supported fields:
 
@@ -72,7 +72,7 @@ Each entry under the `[tools.*]` table describes a single tool. Supported fields
 | `platform` | optional | List of platforms this tool applies to (`macos`, `linux`, `linux-ubuntu`, etc.). |
 | `hosts` | optional | List of sanitized hostnames for machine-specific entries. |
 
-Profile `config.toml` files form the base. You can add workspace-specific overrides by editing `$XDG_CONFIG_HOME/dws/config.toml`; when a tool name appears in both places, the workspace entry replaces the profile entry entirely. Filters that do not match the current platform or hostname fall back to the profile definition.
+Profile `dws.toml` files form the base. You can add workspace-specific overrides by editing `$XDG_CONFIG_HOME/dws/config.toml`; when a tool name appears in both places, the workspace entry replaces the profile entry entirely. Filters that do not match the current platform or hostname fall back to the profile definition.
 
 ## Shell Integration
 

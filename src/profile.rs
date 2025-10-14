@@ -27,6 +27,6 @@ impl Profile {
     }
 
     pub fn config_file(&self) -> PathBuf {
-        self.root.join("config.toml")
+        self.root.join("dws.toml")
     }
 }

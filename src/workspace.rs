@@ -46,8 +46,8 @@ const TEMPLATE_FILES: &[TemplateFile] = &[
         content: include_str!("../templates/profile/README.md"),
     },
     TemplateFile {
-        path: "config.toml",
-        content: include_str!("../templates/profile/config.toml"),
+        path: "dws.toml",
+        content: include_str!("../templates/profile/dws.toml"),
     },
     TemplateFile {
         path: "config/zsh/.zshrc",
@@ -74,7 +74,7 @@ pub enum WorkspacePath {
     Profile,
     /// Config directory: active profile config
     Config,
-    /// Profile `config.toml` file
+    /// Profile `dws.toml` file
     ProfileConfig,
     /// Bin directory: $XDG_STATE_HOME/dws/bin
     Bin,
@@ -1407,7 +1407,7 @@ mod tests {
         assert!(workspace
             .path(WorkspacePath::ProfileConfig)
             .to_string_lossy()
-            .ends_with("config.toml"));
+            .ends_with("dws.toml"));
         assert!(workspace
             .path(WorkspacePath::Share)
             .to_string_lossy()

@@ -27,7 +27,7 @@ impl fmt::Display for InstallerKind {
     }
 }
 
-/// Raw representation of a single tool defined in `config.toml`.
+/// Raw representation of a single tool defined in `dws.toml` (profile) or `config.toml` (workspace override).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolSpecToml {
     pub installer: InstallerKind,
@@ -100,7 +100,7 @@ impl ToolSpecToml {
     }
 }
 
-/// Complete representation of a `config.toml` file.
+/// Complete representation of a tool manifest file (`dws.toml` or `config.toml`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ToolConfigFile {
     #[serde(default)]
@@ -175,7 +175,7 @@ pub struct ToolSet {
 impl ToolSet {
     /// Load resolved tool definitions from the profile and workspace configuration files.
     pub fn load(profile_root: &Path, workspace_config_path: &Path) -> Result<Self> {
-        let profile_file = profile_root.join("config.toml");
+        let profile_file = profile_root.join("dws.toml");
         let profile_config = ToolConfigFile::load(&profile_file)?;
         let workspace_config = ToolConfigFile::load(workspace_config_path)?;
 
@@ -380,7 +380,7 @@ mod tests {
     fn setup_profile(temp: &TempDir, contents: &str) -> PathBuf {
         let profile_root = temp.path().join("profiles").join("default");
         fs::create_dir_all(&profile_root).unwrap();
-        fs::write(profile_root.join("config.toml"), contents).unwrap();
+        fs::write(profile_root.join("dws.toml"), contents).unwrap();
         profile_root
     }
 
@@ -500,7 +500,7 @@ platform = ["does-not-match"]
         let tools = ToolSet::load(&profile_root, &workspace_config).unwrap();
         assert_eq!(tools.len(), 1);
         let entry = tools.iter().next().unwrap().1;
-        assert_eq!(entry.source, profile_root.join("config.toml"));
+        assert_eq!(entry.source, profile_root.join("dws.toml"));
         assert_eq!(entry.definition.version, None);
     }
 

@@ -4,7 +4,7 @@ This document is the single source of truth for AI and human collaborators who a
 
 ## Project Overview
 
-- **Mission**: ship a lightweight, portable bootstrapper that turns a fresh POSIX machine into a ready-to-code workspace using declarative `config.toml` files.
+- **Mission**: ship a lightweight, portable bootstrapper that turns a fresh POSIX machine into a ready-to-code workspace using declarative `dws.toml` manifests (with workspace overrides in `config.toml`).
 - **License**: MIT &nbsp;|&nbsp; **Primary language**: Rust 2021
 - **Repository**: `https://github.com/ascarter/dws`
 - Everything lives inside the XDG directory hierarchy so uninstalling the tool simply removes `$XDG_CONFIG_HOME/dws`, `$XDG_STATE_HOME/dws`, and `$XDG_CACHE_HOME/dws`.
@@ -13,7 +13,7 @@ This document is the single source of truth for AI and human collaborators who a
 1. Bootstrap laptops quickly with a single binary.
 2. Remain XDG compliant and self-contained.
 3. Favor native tooling (rustup, uv, fnm, etc.) over shims.
-4. Track dotfiles and `config.toml` tool definitions in version control.
+4. Track dotfiles and profile `dws.toml` tool definitions in version control.
 5. Support multiple “profiles” so users can switch between contexts (personal, client, project).
 
 ### Non-goals
@@ -90,7 +90,7 @@ Workspace                    // Root context (~/.config/dws)
 
 - The active profile is persisted in `$XDG_CONFIG_HOME/dws/config.toml`.
 - Profile repositories live under `$XDG_CONFIG_HOME/dws/profiles/<profile>`.
-- Tool precedence: profile `config.toml` defines the baseline, and `$XDG_CONFIG_HOME/dws/config.toml` can add or replace entire tool entries that match the current platform/host filters.
+- Tool precedence: profile `dws.toml` defines the baseline, and `$XDG_CONFIG_HOME/dws/config.toml` can add or replace entire tool entries that match the current platform/host filters.
 - Template scaffolding seeds a `default` profile during `dws init`.
 - `Dotfiles` installs symlinks from `<profile>/config/**` into the target XDG directory, respecting `.dwsignore`.
 - `Lockfile` captures installed symlinks and tools to support idempotent reinstall/update flows.
