@@ -26,6 +26,8 @@ ubi = { version = "0.7", default-features = false, features = ["rustls-tls"] }
 walkdir = "2.5"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking"] }
 url = "2.5"
+anstyle = "1.0"
+atty = "0.2"
 
 [dev-dependencies]
 assert_cmd = "2.0"

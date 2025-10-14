@@ -1,6 +1,7 @@
 // Public API
 pub mod cli;
 pub mod commands;
+pub mod ui;
 
 // Core domain types
 mod config;

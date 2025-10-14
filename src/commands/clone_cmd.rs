@@ -1,4 +1,4 @@
-use crate::Workspace;
+use crate::{ui, Workspace};
 use anyhow::Result;
 
 pub fn execute(
@@ -7,9 +7,9 @@ pub fn execute(
     profile: Option<String>,
 ) -> Result<()> {
     let name = workspace.clone_into_profile(&repository, profile.as_deref())?;
-    println!(
-        "Profile '{}' cloned. Run 'dws use {}' to activate it.",
-        name, name
+    ui::success(
+        "Cloned",
+        format!("profile '{name}'. Run 'dws use {name}' to activate it."),
     );
     Ok(())
 }

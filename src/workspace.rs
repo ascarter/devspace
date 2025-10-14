@@ -17,6 +17,7 @@ use crate::installers::{self, InstallContext, ToolInstaller};
 use crate::lockfile::{Lockfile, ToolEntry as LockfileToolEntry};
 use crate::profile::Profile;
 use crate::toolset::{ToolDefinition, ToolSet};
+use crate::ui::{self, Progress};
 use tokio::runtime::Runtime;
 
 /// Template file definition for workspace initialization
@@ -284,7 +285,7 @@ impl Workspace {
 
     pub fn use_profile(&mut self, profile_name: &str) -> Result<()> {
         if profile_name == self.active_profile_name() {
-            println!("Profile '{}' is already active.", profile_name);
+            ui::info(format!("Profile '{profile_name}' is already active."));
             return Ok(());
         }
 
@@ -300,7 +301,14 @@ impl Workspace {
         }
 
         self.set_active_profile(profile_name.to_string())?;
-        self.install()?;
+        let progress = ui::Progress::new("Switching", format!("profile '{profile_name}'"));
+        match self.install() {
+            Ok(()) => progress.success("Finished", Some("active now".to_string())),
+            Err(err) => {
+                progress.fail("Failed", &err);
+                return Err(err);
+            }
+        }
         Ok(())
     }
 
@@ -342,7 +350,10 @@ impl Workspace {
         if let Some(repo) = repository {
             if target_profile.root().exists() {
                 Self::verify_profile_repo(&target_profile, repo)?;
-                println!("Using existing profile at {:?}.", target_profile.root());
+                ui::status(
+                    "Reusing",
+                    format!("profile at {}", target_profile.root().display()),
+                );
             } else {
                 self.clone_profile(repo, &target_profile)?;
             }
@@ -352,16 +363,28 @@ impl Workspace {
 
         self.set_active_profile(target_name)?;
 
-        println!("Installing workspace...");
-        self.install().context("Failed to install workspace")?;
+        let install_progress = Progress::new(
+            "Installing",
+            format!("workspace for profile '{}'", self.active_profile_name()),
+        );
+        if let Err(err) = self.install() {
+            install_progress.fail("Failed", &err);
+            return Err(err).context("Failed to install workspace");
+        }
+        install_progress.success("Finished", Some("ready".to_string()));
 
         self.setup(shell)
             .with_context(|| format!("Failed to setup shell integration for {}", shell))?;
 
-        println!("\n✓ Workspace initialized successfully!");
-        println!("  Shell: {}", shell);
-        println!("  Profile: {:?}", self.active_profile.root());
-        println!("\nRun 'exec $SHELL' to reload your shell.");
+        ui::success(
+            "Finished",
+            format!(
+                "workspace initialized (profile '{}', shell {})",
+                self.active_profile_name(),
+                shell
+            ),
+        );
+        ui::info("Run 'exec $SHELL' to reload your shell.");
 
         Ok(())
     }
@@ -440,11 +463,15 @@ impl Workspace {
     }
 
     fn ensure_profile_template(&self, profile: &Profile) -> Result<()> {
-        if profile.root().exists() {
-            println!("Updating template profile at {:?}...", profile.root());
+        let verb = if profile.root().exists() {
+            "Updating"
         } else {
-            println!("Creating template profile at {:?}...", profile.root());
-        }
+            "Creating"
+        };
+        let progress = Progress::new(
+            verb,
+            format!("template profile at {}", profile.root().display()),
+        );
 
         fs::create_dir_all(&self.workspace_dir).with_context(|| {
             format!(
@@ -474,17 +501,16 @@ impl Workspace {
             }
         }
 
-        println!("✓ Template prepared");
+        progress.success("Prepared", None);
         Ok(())
     }
 
     fn clone_profile(&self, repository: &str, profile: &Profile) -> Result<()> {
         let url = Self::canonical_url(repository);
 
-        println!(
-            "Cloning repository {} into profile {:?}...",
-            url,
-            profile.name()
+        let progress = Progress::new(
+            "Cloning",
+            format!("{} -> {}", url, profile.root().display()),
         );
 
         fs::create_dir_all(&self.profiles_dir).with_context(|| {
@@ -502,65 +528,79 @@ impl Workspace {
             );
         }
 
-        git2::Repository::clone(&url, profile.root()).with_context(|| {
-            format!("Failed to clone repository {} to {:?}", url, profile.root())
-        })?;
-
-        println!("✓ Repository cloned");
-        Ok(())
+        match git2::Repository::clone(&url, profile.root()) {
+            Ok(_) => {
+                progress.success("Cloned", Some(format!("profile '{}'", profile.name())));
+                Ok(())
+            }
+            Err(err) => {
+                progress.fail("Failed", &err);
+                Err(err).with_context(|| {
+                    format!("Failed to clone repository {} to {:?}", url, profile.root())
+                })
+            }
+        }
     }
 
     /// Setup shell integration by adding dws env to shell rc files
     pub fn setup(&self, shell: &str) -> Result<()> {
-        println!("Setting up {} integration...", shell);
+        let progress = Progress::new("Configuring", format!("{shell} shell integration"));
 
-        let home = directories::BaseDirs::new()
-            .ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?
-            .home_dir()
-            .to_path_buf();
+        let configure_result = (|| -> Result<bool> {
+            let home = directories::BaseDirs::new()
+                .ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?
+                .home_dir()
+                .to_path_buf();
 
-        match shell {
-            "zsh" => {
-                let zshenv = home.join(".zshenv");
-                Self::add_shell_integration(&zshenv, "eval \"$(dws env --shell zsh)\"")?;
-            }
-            "bash" => {
-                let bashrc = home.join(".bashrc");
-                Self::add_shell_integration(&bashrc, "eval \"$(dws env --shell bash)\"")?;
-            }
-            "fish" => {
-                let config_fish = home.join(".config/fish/config.fish");
-                // Create parent directory if it doesn't exist
-                if let Some(parent) = config_fish.parent() {
-                    fs::create_dir_all(parent)?;
+            match shell {
+                "zsh" => {
+                    let zshenv = home.join(".zshenv");
+                    Self::add_shell_integration(&zshenv, "eval \"$(dws env --shell zsh)\"")
                 }
-                Self::add_shell_integration(&config_fish, "dws env --shell fish | source")?;
+                "bash" => {
+                    let bashrc = home.join(".bashrc");
+                    Self::add_shell_integration(&bashrc, "eval \"$(dws env --shell bash)\"")
+                }
+                "fish" => {
+                    let config_fish = home.join(".config/fish/config.fish");
+                    if let Some(parent) = config_fish.parent() {
+                        fs::create_dir_all(parent)?;
+                    }
+                    Self::add_shell_integration(&config_fish, "dws env --shell fish | source")
+                }
+                _ => Err(anyhow::anyhow!("Unsupported shell: {shell}")),
             }
-            _ => {
-                anyhow::bail!("Unsupported shell: {}", shell);
+        })();
+
+        match configure_result {
+            Ok(changed) => {
+                let detail = if changed {
+                    format!("{shell} rc updated")
+                } else {
+                    format!("{shell} rc already configured")
+                };
+                progress.success("Configured", Some(detail));
+                Ok(())
+            }
+            Err(err) => {
+                progress.fail("Failed", &err);
+                Err(err)
             }
         }
-
-        println!("✓ Shell integration added to {}", shell);
-        Ok(())
     }
 
     /// Add integration line to shell rc file (idempotent)
-    fn add_shell_integration(rc_file: &PathBuf, integration_line: &str) -> Result<()> {
-        // Read existing content (or empty if file doesn't exist)
+    fn add_shell_integration(rc_file: &PathBuf, integration_line: &str) -> Result<bool> {
         let existing_content = if rc_file.exists() {
             fs::read_to_string(rc_file).with_context(|| format!("Failed to read {:?}", rc_file))?
         } else {
             String::new()
         };
 
-        // Check if integration is already present
         if existing_content.contains(integration_line) {
-            println!("  Shell integration already present in {:?}", rc_file);
-            return Ok(());
+            return Ok(false);
         }
 
-        // Append integration line
         let new_content = if existing_content.is_empty() {
             format!("# dws shell integration\n{}\n", integration_line)
         } else if existing_content.ends_with('\n') {
@@ -578,7 +618,7 @@ impl Workspace {
         fs::write(rc_file, new_content)
             .with_context(|| format!("Failed to write {:?}", rc_file))?;
 
-        Ok(())
+        Ok(true)
     }
 
     /// Get the dotfile manager for the active profile
@@ -682,10 +722,10 @@ impl Workspace {
                     resolved_version: dispatch.resolved_version,
                     installer: dispatch.installer,
                 }),
-                None => println!(
-                    "Skipping tool '{}' - installer '{}' is not yet supported",
-                    name, definition.installer
-                ),
+                None => ui::warn(format!(
+                    "Skipping tool '{name}' - installer '{}' is not yet supported",
+                    definition.installer
+                )),
             }
         }
 
@@ -696,12 +736,21 @@ impl Workspace {
         &self,
         tasks: Vec<ToolInstallTask>,
         lockfile: &mut Lockfile,
+        pending_label: &str,
+        success_label: &str,
+        fail_action: &str,
     ) -> Result<Vec<UpdatedTool>> {
         if tasks.is_empty() {
             return Ok(Vec::new());
         }
 
         let needs_runtime = tasks.iter().any(|task| task.installer.requires_runtime());
+        let total = tasks.len();
+
+        ui::status(
+            "Install",
+            format!("{} tool{} queued", total, if total == 1 { "" } else { "s" }),
+        );
 
         let mut runtime = if needs_runtime {
             Some(Runtime::new().context("Failed to create Tokio runtime")?)
@@ -711,14 +760,29 @@ impl Workspace {
 
         let mut updated = Vec::new();
 
-        for task in tasks {
+        for (index, task) in tasks.into_iter().enumerate() {
             let ToolInstallTask {
                 name,
                 resolved_version,
                 installer,
             } = task;
 
-            installer.install(runtime.as_mut(), lockfile)?;
+            let position = index + 1;
+            let mut display = name.clone();
+            if let Some(version) = &resolved_version {
+                display = format!("{display} {version}");
+            }
+            let message = format!("{display} ({position}/{total})");
+            let progress = Progress::new(pending_label, message);
+            if let Err(err) = installer.install(runtime.as_mut(), lockfile) {
+                progress.fail("Failed", &err);
+                return Err(err).context(format!("Failed to {fail_action} tool '{name}'"));
+            }
+            let detail = resolved_version
+                .as_ref()
+                .map(|version| format!("version {version}"));
+            progress.success(success_label, detail);
+
             updated.push(UpdatedTool {
                 name,
                 version: resolved_version,
@@ -761,13 +825,10 @@ impl Workspace {
 
         let tasks = self.build_tool_tasks(definitions, &install_context)?;
         if tasks.is_empty() {
-            println!("No tools defined for the active profile.");
-        } else {
-            for task in tasks.iter() {
-                println!("Installing tool '{}'...", task.name);
-            }
+            ui::info("No tools defined for the active profile.");
         }
-        let installed = self.execute_tool_tasks(tasks, &mut lockfile)?;
+        let installed =
+            self.execute_tool_tasks(tasks, &mut lockfile, "Installing", "Installed", "install")?;
 
         self.prune_unused_bin(&lockfile)?;
         self.prune_unused_cache(&lockfile)?;
@@ -786,7 +847,10 @@ impl Workspace {
                 .collect::<Vec<String>>()
                 .join(", ");
 
-            println!("Installed {} tool(s): {}", installed.len(), summary);
+            ui::success(
+                "Finished",
+                format!("installed {} tool(s): {}", installed.len(), summary),
+            );
         }
 
         Ok(())
@@ -796,7 +860,7 @@ impl Workspace {
     pub fn update_tools(&self, requested: Option<&str>) -> Result<()> {
         let tools = self.tools()?;
         if tools.is_empty() {
-            println!("No tools defined for the active profile.");
+            ui::info("No tools defined for the active profile.");
             return Ok(());
         }
 
@@ -817,18 +881,16 @@ impl Workspace {
         let mut candidates = Vec::new();
         for (name, entry) in selected {
             if entry.definition.self_update {
-                println!(
-                    "Skipping '{}' because it maintains itself (self_update = true).",
-                    name
-                );
+                ui::info(format!(
+                    "Skipping '{name}' because it maintains itself (self_update = true)."
+                ));
                 continue;
             }
 
             if let Some(version) = entry.definition.version.as_deref() {
-                println!(
-                    "Skipping '{}' because it is pinned to version '{}'.",
-                    name, version
-                );
+                ui::info(format!(
+                    "Skipping '{name}' because it is pinned to version '{version}'."
+                ));
                 continue;
             }
 
@@ -836,7 +898,7 @@ impl Workspace {
         }
 
         if candidates.is_empty() {
-            println!("No tools eligible for update.");
+            ui::info("No tools eligible for update.");
             return Ok(());
         }
 
@@ -845,7 +907,7 @@ impl Workspace {
         let tasks = self.build_tool_tasks(candidates, &install_context)?;
 
         if tasks.is_empty() {
-            println!("No installers available for the selected tools.");
+            ui::warn("No installers available for the selected tools.");
             return Ok(());
         }
 
@@ -880,16 +942,16 @@ impl Workspace {
                     });
 
                     if version_matches && !missing_paths {
-                        println!(
+                        ui::info(format!(
                             "'{}' is already at version '{}'; skipping.",
                             task.name, resolved
-                        );
+                        ));
                         continue;
                     } else if version_matches && missing_paths {
-                        println!(
+                        ui::warn(format!(
                             "'{}' is already at version '{}' but required files are missing; reinstalling.",
                             task.name, resolved
-                        );
+                        ));
                     }
                 }
             }
@@ -897,7 +959,7 @@ impl Workspace {
         }
 
         if filtered_tasks.is_empty() {
-            println!("All tools are up to date.");
+            ui::success("Finished", "all tools are up to date.");
             return Ok(());
         }
 
@@ -916,21 +978,15 @@ impl Workspace {
             lockfile.retain_tool_symlinks(|entry| entry.name != *name);
         }
 
-        for name in &names_to_update {
-            println!("Updating '{}'...", name);
-        }
-
         let updated = self
-            .execute_tool_tasks(filtered_tasks, &mut lockfile)
+            .execute_tool_tasks(
+                filtered_tasks,
+                &mut lockfile,
+                "Updating",
+                "Updated",
+                "update",
+            )
             .context("Failed to update selected tools")?;
-
-        for update in &updated {
-            if let Some(version) = &update.version {
-                println!("Updated '{}' to {}.", update.name, version);
-            } else {
-                println!("Updated '{}'.", update.name);
-            }
-        }
 
         self.prune_unused_bin(&lockfile)?;
         self.prune_unused_cache(&lockfile)?;
@@ -950,7 +1006,10 @@ impl Workspace {
             .collect::<Vec<String>>()
             .join(", ");
 
-        println!("Updated {} tool(s): {}", updated.len(), summary);
+        ui::success(
+            "Finished",
+            format!("updated {} tool(s): {}", updated.len(), summary),
+        );
 
         Ok(())
     }
@@ -970,10 +1029,10 @@ impl Workspace {
             Ok(repo) => Some(repo),
             Err(err) => match err.code() {
                 ErrorCode::NotFound => {
-                    println!(
+                    ui::info(format!(
                         "Skipping git reset: active profile '{}' is not a git repository.",
                         self.active_profile_name()
-                    );
+                    ));
                     None
                 }
                 _ => return Err(err.into()),
@@ -987,24 +1046,37 @@ impl Workspace {
         }
 
         if !force && !confirm_reset()? {
-            println!("Reset cancelled.");
+            ui::info("Reset cancelled.");
             return Ok(());
         }
 
-        println!("Uninstalling current workspace...");
-        self.uninstall()
-            .context("Failed to uninstall existing workspace state")?;
+        let uninstall_progress = Progress::new("Cleaning", "current workspace state");
+        if let Err(err) = self.uninstall() {
+            uninstall_progress.fail("Failed", &err);
+            return Err(err).context("Failed to uninstall existing workspace state");
+        }
+        uninstall_progress.success("Cleaned", Some("clean".to_string()));
 
         if let Some(repo) = repo {
-            println!("Resetting profile repository at {:?}...", profile_path);
-            reset_repository(repo).context("Failed to reset profile repository")?;
+            let reset_progress = Progress::new(
+                "Resetting",
+                format!("profile repository at {}", profile_path.display()),
+            );
+            if let Err(err) = reset_repository(repo) {
+                reset_progress.fail("Failed", &err);
+                return Err(err).context("Failed to reset profile repository");
+            }
+            reset_progress.success("Reset", None);
         }
 
-        println!("Reinstalling workspace...");
-        self.install()
-            .context("Failed to reinstall workspace after reset")?;
+        let install_progress = Progress::new("Reinstalling", "workspace");
+        if let Err(err) = self.install() {
+            install_progress.fail("Failed", &err);
+            return Err(err).context("Failed to reinstall workspace after reset");
+        }
+        install_progress.success("Installed", None);
 
-        println!("✓ Workspace reset complete.");
+        ui::success("Finished", "workspace reset complete.");
         Ok(())
     }
 
@@ -1240,7 +1312,7 @@ fn confirm_reset() -> Result<bool> {
 
 fn reset_repository(repo: Repository) -> Result<()> {
     if let Err(err) = fetch_remote(&repo) {
-        println!("Warning: failed to fetch 'origin': {err}");
+        ui::warn(format!("Failed to fetch 'origin': {err}"));
     }
 
     let target = determine_reset_target(&repo)?;

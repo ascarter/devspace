@@ -1,4 +1,4 @@
-use crate::Workspace;
+use crate::{ui, Workspace};
 use anyhow::Result;
 
 pub fn execute(_workspace: &Workspace) -> Result<()> {
@@ -9,6 +9,6 @@ pub fn execute(_workspace: &Workspace) -> Result<()> {
     // 4. Remove cached versions not in lockfile
     // 5. Report what was cleaned up
 
-    println!("TODO: dws cleanup - not yet implemented");
+    ui::info("TODO: dws cleanup - not yet implemented");
     Ok(())
 }

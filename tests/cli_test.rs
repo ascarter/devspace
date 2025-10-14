@@ -19,7 +19,7 @@ fn test_init_creates_template() {
         .arg("init")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Template"));
+        .stdout(predicate::str::contains("template profile"));
 
     // Verify workspace was created
     assert!(temp.path().join("dws").exists());
@@ -45,7 +45,9 @@ fn test_init_with_explicit_shell() {
         .arg("bash")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Shell: bash"));
+        .stdout(predicate::str::contains(
+            "workspace initialized (profile 'default', shell bash)",
+        ));
 
     assert!(temp.path().join("dws").exists());
 }
@@ -64,7 +66,9 @@ fn test_init_shell_flag_short() {
         .arg("fish")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Shell: fish"));
+        .stdout(predicate::str::contains(
+            "workspace initialized (profile 'default', shell fish)",
+        ));
 
     assert!(temp.path().join("dws").exists());
 }
@@ -205,7 +209,10 @@ fn test_clone_and_use_profile() {
         .arg("profiles")
         .assert()
         .success()
-        .stdout(predicate::str::contains("* work (active)"));
+        .stdout(
+            predicate::str::contains("Active work")
+                .and(predicate::str::contains("Profile default")),
+        );
 }
 
 #[test]
@@ -341,7 +348,7 @@ fn test_reset_force_discards_changes() {
         .arg("--force")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Workspace reset complete"));
+        .stdout(predicate::str::contains("workspace reset complete."));
 
     assert!(!profile_root.join("extra.txt").exists());
     let readme = fs::read_to_string(profile_root.join("README.md")).unwrap();
