@@ -67,7 +67,7 @@ fn write_status(kind: StatusKind, label: &str, message: &str) {
     let _ = handle.flush();
 }
 
-fn format_duration(duration: Duration) -> String {
+pub fn format_duration(duration: Duration) -> String {
     if duration.as_secs() >= 60 {
         let minutes = duration.as_secs() / 60;
         let seconds = duration.as_secs() % 60;

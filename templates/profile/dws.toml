@@ -14,14 +14,6 @@
 # project = "BurntSushi/ripgrep"
 # version = "14.0.0"  # Optional pin
 
-# [tools.fd]
-# installer = "ubi"
-# project = "sharkdp/fd"
-
-# [tools.bat]
-# installer = "ubi"
-# project = "sharkdp/bat"
-
 # [tools.rustup]
 # installer = "curl"
 # url = "https://sh.rustup.rs"
@@ -36,3 +28,15 @@
 # [tools.fnm]
 # installer = "ubi"
 # project = "Schniz/fnm"
+
+# [tools.helix]
+# installer = "ubi"
+# project = "helix-editor/helix"
+# bin = ["hx"]
+# symlinks = ["contrib/completion/hx.zsh:${XDG_DATA_HOME}/zsh/completions/_hx"]
+# status_cmd = "hx --version"
+
+# [tools.gh]
+# installer = "ubi"
+# project = "cli/cli"
+# bin = ["bin/gh"]

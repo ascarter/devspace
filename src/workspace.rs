@@ -9,6 +9,7 @@ use std::env;
 use std::fs;
 use std::io::{self, Write};
 use std::path::PathBuf;
+use std::time::Instant;
 
 use crate::config::{default_profile_name, Config};
 use crate::dotfiles::Dotfiles;
@@ -468,10 +469,8 @@ impl Workspace {
         } else {
             "Creating"
         };
-        let progress = Progress::new(
-            verb,
-            format!("template profile at {}", profile.root().display()),
-        );
+        let message = format!("template profile at {}", profile.root().display());
+        ui::status(verb, &message);
 
         fs::create_dir_all(&self.workspace_dir).with_context(|| {
             format!(
@@ -501,7 +500,10 @@ impl Workspace {
             }
         }
 
-        progress.success("Synced", Some("template files up to date".to_string()));
+        ui::success(
+            "Synced",
+            format!("template profile at {}", profile.root().display()),
+        );
         Ok(())
     }
 
@@ -544,8 +546,6 @@ impl Workspace {
 
     /// Setup shell integration by adding dws env to shell rc files
     pub fn setup(&self, shell: &str) -> Result<()> {
-        let progress = Progress::new("Configuring", format!("{shell} shell integration"));
-
         let configure_result = (|| -> Result<bool> {
             let home = directories::BaseDirs::new()
                 .ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?
@@ -574,16 +574,19 @@ impl Workspace {
 
         match configure_result {
             Ok(changed) => {
-                let detail = if changed {
-                    format!("{shell} rc updated")
+                let message = if changed {
+                    format!("{shell} shell integration")
                 } else {
-                    format!("{shell} rc already configured")
+                    format!("{shell} shell integration (already configured)")
                 };
-                progress.success("Configured", Some(detail));
+                ui::status("Configured", message);
                 Ok(())
             }
             Err(err) => {
-                progress.fail("Failed", &err);
+                ui::error(format!(
+                    "Failed to configure {} shell integration: {}",
+                    shell, err
+                ));
                 Err(err)
             }
         }
@@ -737,8 +740,6 @@ impl Workspace {
         tasks: Vec<ToolInstallTask>,
         lockfile: &mut Lockfile,
         pending_label: &str,
-        success_label: &str,
-        fail_action: &str,
     ) -> Result<Vec<UpdatedTool>> {
         if tasks.is_empty() {
             return Ok(Vec::new());
@@ -746,11 +747,6 @@ impl Workspace {
 
         let needs_runtime = tasks.iter().any(|task| task.installer.requires_runtime());
         let total = tasks.len();
-
-        ui::status(
-            "Install",
-            format!("{} tool{} queued", total, if total == 1 { "" } else { "s" }),
-        );
 
         let mut runtime = if needs_runtime {
             Some(Runtime::new().context("Failed to create Tokio runtime")?)
@@ -768,20 +764,25 @@ impl Workspace {
             } = task;
 
             let position = index + 1;
-            let mut display = name.clone();
-            if let Some(version) = &resolved_version {
-                display = format!("{display} {version}");
-            }
-            let message = format!("{display} ({position}/{total})");
-            let progress = Progress::new(pending_label, message);
-            if let Err(err) = installer.install(runtime.as_mut(), lockfile) {
-                progress.fail("Failed", &err);
-                return Err(err).context(format!("Failed to {fail_action} tool '{name}'"));
-            }
-            let detail = resolved_version
+            let display = resolved_version
                 .as_ref()
-                .map(|version| format!("version {version}"));
-            progress.success(success_label, detail);
+                .map(|version| format!("{name} {version}"))
+                .unwrap_or_else(|| name.clone());
+            ui::status(pending_label, format!("{display} ({position}/{total})"));
+
+            if let Err(err) = installer.install(runtime.as_mut(), lockfile) {
+                ui::error(format!(
+                    "Failed to {} tool '{}': {}",
+                    pending_label.to_lowercase(),
+                    name,
+                    err
+                ));
+                return Err(err).context(format!(
+                    "Failed to {} tool '{}'",
+                    pending_label.to_lowercase(),
+                    name
+                ));
+            }
 
             updated.push(UpdatedTool {
                 name,
@@ -827,8 +828,8 @@ impl Workspace {
         if tasks.is_empty() {
             ui::info("No tools defined for the active profile.");
         }
-        let installed =
-            self.execute_tool_tasks(tasks, &mut lockfile, "Installing", "Installed", "install")?;
+        let install_start = Instant::now();
+        let installed = self.execute_tool_tasks(tasks, &mut lockfile, "Installing")?;
 
         self.prune_unused_bin(&lockfile)?;
         self.prune_unused_cache(&lockfile)?;
@@ -838,6 +839,7 @@ impl Workspace {
         lockfile.save(&lockfile_path)?;
 
         if !installed.is_empty() {
+            let elapsed = install_start.elapsed();
             let summary = installed
                 .iter()
                 .map(|update| match &update.version {
@@ -848,8 +850,13 @@ impl Workspace {
                 .join(", ");
 
             ui::success(
-                "Finished",
-                format!("installed {} tool(s): {}", installed.len(), summary),
+                "Installed",
+                format!(
+                    "{} tool(s) in {}: {}",
+                    installed.len(),
+                    ui::format_duration(elapsed),
+                    summary
+                ),
             );
         }
 
@@ -978,14 +985,9 @@ impl Workspace {
             lockfile.retain_tool_symlinks(|entry| entry.name != *name);
         }
 
+        let update_start = Instant::now();
         let updated = self
-            .execute_tool_tasks(
-                filtered_tasks,
-                &mut lockfile,
-                "Updating",
-                "Updated",
-                "update",
-            )
+            .execute_tool_tasks(filtered_tasks, &mut lockfile, "Updating")
             .context("Failed to update selected tools")?;
 
         self.prune_unused_bin(&lockfile)?;
@@ -1007,8 +1009,13 @@ impl Workspace {
             .join(", ");
 
         ui::success(
-            "Finished",
-            format!("updated {} tool(s): {}", updated.len(), summary),
+            "Updated",
+            format!(
+                "{} tool(s) in {}: {}",
+                updated.len(),
+                ui::format_duration(update_start.elapsed()),
+                summary
+            ),
         );
 
         Ok(())
