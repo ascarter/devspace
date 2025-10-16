@@ -244,6 +244,41 @@ fn test_use_missing_profile_fails() {
         .stderr(predicate::str::contains("does not exist"));
 }
 
+#[test]
+#[serial]
+fn test_status_reports_active_profile_and_config() {
+    let temp = TempDir::new().unwrap();
+
+    // Initialize default workspace to populate lockfile and config symlinks.
+    Command::cargo_bin("dws")
+        .unwrap()
+        .env("XDG_CONFIG_HOME", temp.path())
+        .env("XDG_STATE_HOME", temp.path().join("state"))
+        .env("XDG_CACHE_HOME", temp.path().join("cache"))
+        .env("HOME", temp.path())
+        .env("SHELL", "/bin/zsh")
+        .arg("init")
+        .assert()
+        .success();
+
+    Command::cargo_bin("dws")
+        .unwrap()
+        .env("XDG_CONFIG_HOME", temp.path())
+        .env("XDG_STATE_HOME", temp.path().join("state"))
+        .env("XDG_CACHE_HOME", temp.path().join("cache"))
+        .env("HOME", temp.path())
+        .arg("status")
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("Active profile 'default'")
+                .and(predicate::str::contains("Config 3 item(s) healthy"))
+                .and(predicate::str::contains(
+                    "No tools defined for the active profile.",
+                )),
+        );
+}
+
 fn copy_dir_all(src: &Path, dst: &Path) {
     fs::create_dir_all(dst).unwrap();
     for entry in fs::read_dir(src).unwrap() {
