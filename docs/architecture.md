@@ -100,82 +100,124 @@ fpath=($HOME/.local/state/dws/share/zsh/site-functions $fpath)
 
 ```toml
 # ~/.local/state/dws/dws.lock
-# Machine-generated - tracks resolved state of installed workspace
+# Machine-generated - tracks resolved tool installation state
+# Schema version 2 introduces tool_receipts (replaces tool_symlinks)
 
-version = 1
+version = 2
 
 [metadata]
-installed_at = "2025-10-07T12:34:56.789Z"
+generated_at = "2025-10-07T12:34:56.789Z"
+dws_version = "0.1.0"
 
-# ~/.local/state/dws/dws.lock (example excerpt)
+# Example excerpt
 
 [[config_symlinks]]
 source = "/Users/user/.config/dws/profiles/default/config/zsh/.zshrc"
 target = "/Users/user/.config/zsh/.zshrc"
 
-[[config_symlinks]]
-source = "/Users/user/.config/dws/profiles/default/config/nvim/init.lua"
-target = "/Users/user/.config/nvim/init.lua"
+[[tool_receipts]]
+name = "ripgrep"
+installer_kind = "github"
+manifest_version = "v14.0.0"
+resolved_version = "v14.0.0"
+asset = "/Users/user/.cache/dws/downloads/ripgrep-v14.0.0-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+asset_regex = "^ripgrep-14\\.0\\.0-x86_64-unknown-linux-musl\\.tar\\.gz$"
+asset_size = 9211234
+pinned = true
+self_update = false
+installed_at = "2025-10-07T12:34:56.900Z"
+status = "ok"
 
-[[tool_symlinks]]
-name = "rg"
-version = "14.0.0"
-source = "/Users/user/.cache/dws/tools/ripgrep/14.0.0/rg"
-target = "/Users/user/.local/state/dws/bin/rg"
+  [[tool_receipts.binaries]]
+  link = "rg"
+  source = "/Users/user/.cache/dws/tools/ripgrep/v14.0.0/rg"
 
-[[tool_symlinks]]
-name = "fd"
-version = "9.0.0"
-source = "/Users/user/.cache/dws/tools/fd/9.0.0/fd"
-target = "/Users/user/.local/state/dws/bin/fd"
+  [[tool_receipts.extras]]
+  kind = "man"
+  source = "/Users/user/.cache/dws/tools/ripgrep/v14.0.0/doc/rg.1"
+  target = "/Users/user/.local/state/dws/share/man/man1/rg.1"
+
+[[tool_receipts]]
+name = "uv"
+installer_kind = "script"
+manifest_version = "latest"
+resolved_version = "0.1.20"
+asset = "/Users/user/.cache/dws/downloads/uv-latest-script"
+checksum = "sha256:cafebabe0123456789abcdefcafebabe0123456789abcdefcafebabe01234567"
+asset_regex = ""
+pinned = false
+self_update = true
+installed_at = "2025-10-07T12:35:10.000Z"
+status = "ok"
+
+  [[tool_receipts.binaries]]
+  link = "uv"
+  source = "/Users/user/.cache/dws/tools/uv/0.1.20/uv"
 ```
 
 **Purpose:**
-- Tracks exactly what symlinks are installed for this workspace
-- Enables reliable cleanup and reinstall
-- Provides audit trail for `dws status` and `dws cleanup`
-- Detects drift (symlinks changed/removed outside dws)
-- Generated/updated on `dws init`, `dws sync`, `dws update`
+- Captures authoritative receipt per installed tool/version (binaries & extras)
+- Enables reliable cleanup, update decisions, and integrity verification
+- Provides audit trail (resolved vs manifest version, checksum, asset path)
+- Detects drift (missing sources / checksum mismatch)
+- Updated atomically after successful add/install/update operations
 
 ## `dws.toml` Format
 
 ```toml
 # ~/.config/dws/profiles/<profile>/dws.toml
+# New schema: structured tables for binaries & extras, regex-based asset selection
 
 [tools.ripgrep]
-installer = "ubi"
+installer = "github"                 # github | gitlab | script
 project = "BurntSushi/ripgrep"
-platform = ["macos", "linux"]
+version = "v14.0.0"                  # or "latest" (unpinned)
+asset_filter = ["^ripgrep-14\\.0\\.0-x86_64-unknown-linux-musl\\.tar\\.gz$"]
+checksum = "sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+self_update = false
+platform = ["linux"]
+
+[[tools.ripgrep.bin]]
+source = "rg"                        # binary inside archive
+
+[[tools.ripgrep.extras]]
+source = "doc/rg.1"
+kind = "man"
+
+[[tools.ripgrep.extras]]
+source = "complete/_rg"
+kind = "completion"
+shell = "zsh"
 
 [tools.uv]
-installer = "curl"
+installer = "script"
 url = "https://astral.sh/uv/install.sh"
 shell = "sh"
+version = "latest"
+checksum = "sha256:cafebabe0123456789abcdefcafebabe0123456789abcdefcafebabe01234567"
 self_update = true
 
-# Workspace overrides live in $XDG_CONFIG_HOME/dws/config.toml and
-# replace entire tool entries when names match.
-#
-# [tools.ripgrep]
-# installer = "ubi"
-# project = "BurntSushi/ripgrep"
-# version = "latest"
+[[tools.uv.bin]]
+source = "uv"
+
+# Workspace overrides in $XDG_CONFIG_HOME/dws/config.toml replace whole tool entries.
 ```
 
 ### Field Reference
 
-- `installer` *(required)* — Backend identifier (`ubi`, `curl`, `dmg`, `flatpak`).
-- `project` — GitHub `owner/repo` used by release-based installers.
-- `version` — Explicit version pin; omit for backend default/latest.
-- `url` — Direct download endpoint for script or disk image installers.
-- `shell` — Interpreter for installer scripts (e.g. `sh`, `bash`).
-- `bin` — Executables to link into the workspace `bin/` directory (defaults to the release binary name for `ubi` when omitted).
-- `symlinks` — Extra files to link, using `source:target` syntax.
-- `app` — macOS `.app` bundle name extracted from a DMG.
-- `team_id` — Apple Developer team identifier for notarization verification.
-- `self_update` — Set to `true` for tools that maintain themselves; they will be skipped by `dws update`.
-- `platform` — Optional array of platform tags. Tags use `std::env::consts::OS` values (`macos`, `linux`) plus distro-specific slugs like `linux-ubuntu` and `linux-debian` derived from `/etc/os-release`. Arch sub-tags (e.g. `macos-aarch64`) are also available. Windows is not supported; use WSL when necessary.
-- `hosts` — Optional array of sanitized hostnames. Values are compared case-insensitively after converting non-alphanumeric characters to `-`.
+- `installer` *(required)* — Backend identifier (`github`, `gitlab`, `script`).
+- `project` — Forge `owner/repo` (GitHub/GitLab) for release installers.
+- `version` — Explicit tag (pinned) or `"latest"` (unpinned; still deterministic asset selection).
+- `url` — Script download URL (only for `installer = "script"`).
+- `shell` — Interpreter for script installers (e.g. `sh`, `bash`).
+- `[[tools.<name>.bin]]` — Structured binary entries (`source`, optional `link`).
+- `[[tools.<name>.extras]]` — Additional linkables (`source`, `kind` = man|completion|other, optional `shell`, optional explicit `target`).
+- `asset_filter` — Ordered list of regex patterns; first that yields a single asset (after scoring/refinement) is used.
+- `checksum` — Mandatory `sha256:<hex>` for asset or script content (integrity & reproducibility).
+- `self_update` — Tool manages its own updates; `dws update` verifies presence & checksum but does not reinstall.
+- `platform` — Optional array of platform tags (e.g. `linux`, `macos`, `linux-ubuntu`). Non-matching entries are treated as errors during validation.
+- `hosts` — Optional hostname filters (sanitized). Entry ignored if host does not match.
 
 ### Precedence & Layering
 
@@ -242,11 +284,11 @@ dws status    # Show what's installed
 - ✅ Command handlers scaffolded
 - ✅ XDG helpers implemented
 - ✅ Config symlink management
-- ✅ Lockfile-based state tracking
-- ✅ Single workspace model (no profiles)
+- ✅ Lockfile-based state tracking (v2 receipts planned)
+- ✅ Single workspace model (multi-profile support via workspaces directory)
 - ✅ Shell auto-detection from $SHELL
 - ✅ Template structure with default shell configs
-- ⏳ Tool installation backends (TODO)
-- ✅ Manifest parsing (typed merges across precedence)
-- ⏳ Cleanup command (remove unused cache, orphaned symlinks)
-- ⏳ Status command (read lockfile, show installed state)
+- 🚧 Refactor: internal forge/script installer backends (github/gitlab/script) replacing `ubi`
+- 🚧 New manifest parser (structured bin/extras, asset_filter regex list, mandatory checksum)
+- 🚧 Cleanup enhancements (auto repair/remove broken symlinks, prune inactive versions)
+- 🚧 Update: status to surface receipt integrity (checksum_mismatch, missing_source) post-refactor

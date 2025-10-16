@@ -93,34 +93,54 @@ dws use work
 ```toml
 # profiles/<profile>/dws.toml
 [tools.ripgrep]
-installer = "ubi"
+installer = "github"
 project = "BurntSushi/ripgrep"
-platform = ["macos", "linux"]
+version = "v14.0.0"
+asset_filter = ["^ripgrep-14\\.0\\.0-x86_64-unknown-linux-musl\\.tar\\.gz$"]
+checksum = "sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+self_update = false
+platform = ["linux"]
+
+[[tools.ripgrep.bin]]
+source = "rg"
+
+[[tools.ripgrep.extras]]
+source = "doc/rg.1"
+kind = "man"
+
+[[tools.ripgrep.extras]]
+source = "complete/_rg"
+kind = "completion"
+shell = "zsh"
 
 [tools.uv]
-installer = "curl"
+installer = "script"
 url = "https://astral.sh/uv/install.sh"
 shell = "sh"
+version = "latest"
+checksum = "sha256:cafebabe0123456789abcdefcafebabe0123456789abcdefcafebabe01234567"
 self_update = true
 
-# Optional workspace overrides live in $XDG_CONFIG_HOME/dws/config.toml
-# and replace entire tool entries when names match.
+[[tools.uv.bin]]
+source = "uv"
+
+# Workspace overrides live in $XDG_CONFIG_HOME/dws/config.toml and replace entire tool entries.
 ```
 
 ### Tool Entry Reference
 
-- `installer` *(required)* — Backend to use (`ubi`, `curl`, `dmg`, `flatpak`).
-- `project` — GitHub `owner/repo` for release-based installers.
-- `version` — Fixed release version; omit to use the backend default.
-- `url` — Direct download endpoint for scripts or disk images.
-- `shell` — Interpreter used to run installer scripts (e.g. `sh`, `bash`).
-- `bin` — Array of executables to link into `~/.local/state/dws/bin` (defaults to installer-provided binary name when omitted for `ubi`).
-- `symlinks` — Additional files to link, using `source:target` syntax.
-- `app` — macOS `.app` bundle name extracted from a DMG.
-- `team_id` — Apple Developer team identifier used for notarization checks.
-- `self_update` — Set to `true` if the tool updates itself and should be skipped by `dws update`.
-- `platform` — Optional list of platform filters. Values match Rust's `std::env::consts::OS` (`macos`, `linux`) plus distro slugs such as `linux-ubuntu` or `linux-arch` inferred from `/etc/os-release`. Windows is unsupported (use WSL instead).
-- `hosts` — Optional list of sanitized hostnames (lowercase, non-alphanumeric converted to `-`).
+- `installer` *(required)* — Backend identifier (`github`, `gitlab`, `script`).
+- `project` — Forge `owner/repo` (GitHub/GitLab) required for release installers.
+- `version` — Explicit tag (pinned) or `"latest"` (unpinned but still deterministic).
+- `url` — Script download URL (only for `installer = "script"`).
+- `shell` — Interpreter for script installers (e.g. `sh`, `bash`).
+- `[[tools.<name>.bin]]` — Structured binary entries (`source`, optional `link` alias).
+- `[[tools.<name>.extras]]` — Additional linkables (`source`, `kind` = man|completion|other, optional `shell`, optional explicit `target`).
+- `asset_filter` — Ordered list of regex patterns; first that yields exactly one asset (after scoring/refinement) is used.
+- `checksum` — Mandatory `sha256:<hex>` for asset or script content.
+- `self_update` — Tool manages its own updates; `dws update` verifies presence & checksum but does not reinstall.
+- `platform` — Optional platform tags (e.g. `linux`, `macos`, distro variants). Non-matching entries are treated as errors during validation.
+- `hosts` — Optional sanitized host filters; entry ignored (error surfaced) if host does not match current machine.
 
 Tool entries are layered as follows:
 
