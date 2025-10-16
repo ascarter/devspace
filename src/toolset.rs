@@ -10,19 +10,19 @@ use whoami::fallible;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum InstallerKind {
-    Ubi,
     Dmg,
     Flatpak,
     Curl,
+    Github,
 }
 
 impl fmt::Display for InstallerKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            InstallerKind::Ubi => write!(f, "ubi"),
             InstallerKind::Dmg => write!(f, "dmg"),
             InstallerKind::Flatpak => write!(f, "flatpak"),
             InstallerKind::Curl => write!(f, "curl"),
+            InstallerKind::Github => write!(f, "github"),
         }
     }
 }
@@ -43,6 +43,10 @@ pub struct ToolSpecToml {
     pub bin: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub symlinks: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub asset_filters: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checksum: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -90,6 +94,8 @@ impl ToolSpecToml {
             shell: self.shell,
             bin: self.bin,
             symlinks: self.symlinks,
+            asset_filters: self.asset_filters,
+            checksum: self.checksum,
             app: self.app,
             team_id: self.team_id,
             self_update: self.self_update,
@@ -152,6 +158,8 @@ pub struct ToolDefinition {
     pub shell: Option<String>,
     pub bin: Vec<String>,
     pub symlinks: Vec<String>,
+    pub asset_filters: Vec<String>,
+    pub checksum: Option<String>,
     pub app: Option<String>,
     pub team_id: Option<String>,
     pub self_update: bool,
@@ -397,7 +405,7 @@ mod tests {
             &temp,
             r#"
 [tools.ripgrep]
-installer = "ubi"
+installer = "curl"
 project = "BurntSushi/ripgrep"
 bin = ["rg"]
 self_update = true
@@ -410,7 +418,7 @@ self_update = true
         assert_eq!(tools.len(), 1);
         let entry = tools.iter().next().unwrap().1;
         assert_eq!(entry.definition.name, "ripgrep");
-        assert_eq!(entry.definition.installer, InstallerKind::Ubi);
+        assert_eq!(entry.definition.installer, InstallerKind::Curl);
         assert_eq!(entry.definition.bin, vec!["rg"]);
         assert!(entry.definition.self_update);
     }
@@ -422,7 +430,7 @@ self_update = true
             &temp,
             r#"
 [tools.ripgrep]
-installer = "ubi"
+installer = "curl"
 project = "BurntSushi/ripgrep"
 version = "14.0.0"
 "#,
@@ -432,7 +440,7 @@ version = "14.0.0"
             &temp,
             r#"
 [tools.ripgrep]
-installer = "ubi"
+installer = "curl"
 project = "BurntSushi/ripgrep"
 version = "latest"
 bin = ["rg"]
@@ -456,11 +464,11 @@ bin = ["rg"]
             &format!(
                 r#"
 [tools.match]
-installer = "ubi"
+installer = "curl"
 platform = ["{current}"]
 
 [tools.skip]
-installer = "ubi"
+installer = "curl"
 platform = ["totally-different"]
 "#
             ),
@@ -482,7 +490,7 @@ platform = ["totally-different"]
             &temp,
             r#"
 [tools.ripgrep]
-installer = "ubi"
+installer = "curl"
 project = "BurntSushi/ripgrep"
 "#,
         );
@@ -491,7 +499,7 @@ project = "BurntSushi/ripgrep"
             &temp,
             r#"
 [tools.ripgrep]
-installer = "ubi"
+installer = "curl"
 project = "BurntSushi/ripgrep"
 platform = ["does-not-match"]
 "#,
@@ -513,11 +521,11 @@ platform = ["does-not-match"]
             &format!(
                 r#"
 [tools.match]
-installer = "ubi"
+installer = "curl"
 hosts = ["{host_slug}"]
 
 [tools.skip]
-installer = "ubi"
+installer = "curl"
 hosts = ["someone-else"]
 "#
             ),
@@ -540,7 +548,7 @@ hosts = ["someone-else"]
 active_profile = "work"
 
 [tools.ripgrep]
-installer = "ubi"
+installer = "curl"
 
 [extras]
 custom = "value"

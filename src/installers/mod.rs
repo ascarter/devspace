@@ -4,11 +4,11 @@ use anyhow::Result;
 use std::path::PathBuf;
 use tokio::runtime::Runtime;
 
-mod ubi;
-
-pub(crate) use ubi::UbiInstaller;
+// Phase 0 refactor: removed external `ubi` installer backend.
+// Placeholder: future github/gitlab/script modules will be added here.
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub(crate) struct InstallContext {
     pub cache_tools_dir: PathBuf,
     pub bin_dir: PathBuf,
@@ -24,23 +24,69 @@ pub(crate) struct InstallerDispatch {
     pub resolved_version: Option<String>,
 }
 
+// Stub GitHub installer backend (Phase 0)
+// Will later: fetch release metadata, select asset, download, extract, checksum.
+struct GithubInstaller {
+    name: String,
+    version: Option<String>,
+    bins: Vec<String>,
+}
+
+impl GithubInstaller {
+    fn new(def: &ToolDefinition) -> Self {
+        Self {
+            name: def.name.clone(),
+            version: def.version.clone(),
+            bins: def.bin.clone(),
+        }
+    }
+}
+
+impl ToolInstaller for GithubInstaller {
+    fn requires_runtime(&self) -> bool {
+        // Future async metadata/download will require a runtime.
+        false
+    }
+
+    fn install(&self, _runtime: Option<&mut Runtime>, lockfile: &mut Lockfile) -> Result<()> {
+        // Phase 0 stub: record a placeholder receipt (no binaries yet).
+        // Timestamp handled internally by `record_tool_install`.
+        let manifest_version = self.version.clone().unwrap_or_else(|| "latest".to_string());
+        let resolved_version = manifest_version.clone();
+
+        // Touch requested binaries list so the field is considered used (suppresses dead_code warning
+        // until real asset selection populates BinaryLink entries).
+        let _requested_bins = &self.bins;
+
+        lockfile.record_tool_install(
+            &self.name,
+            &manifest_version,
+            &resolved_version,
+            "github",
+            vec![],
+        );
+        Ok(())
+    }
+}
+
 pub(crate) fn create_installer(
     definition: &ToolDefinition,
-    context: InstallContext,
+    _context: InstallContext,
 ) -> Result<Option<InstallerDispatch>> {
     match definition.installer {
-        InstallerKind::Ubi => {
-            let installer = UbiInstaller::new(definition.clone(), context)?;
-            let resolved_version = Some(installer.resolved_version().to_string());
+        InstallerKind::Github => {
+            // Accept even if version missing; will resolve to "latest" placeholder.
+            let installer = GithubInstaller::new(definition);
             Ok(Some(InstallerDispatch {
+                resolved_version: installer.version.clone(),
                 installer: Box::new(installer),
-                resolved_version,
             }))
         }
         _ => Ok(None),
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn sanitize_component(value: &str) -> String {
     let mut result = String::with_capacity(value.len());
     for ch in value.chars() {
@@ -61,7 +107,7 @@ pub(crate) fn sanitize_component(value: &str) -> String {
 mod tests {
     use super::{create_installer, sanitize_component, InstallContext};
     use crate::toolset::{InstallerKind, ToolDefinition};
-    use rstest::rstest;
+    use std::path::PathBuf;
 
     #[test]
     fn test_sanitize_component() {
@@ -86,6 +132,8 @@ mod tests {
                 bins
             },
             symlinks: Vec::new(),
+            asset_filters: Vec::new(),
+            checksum: None,
             app: None,
             team_id: None,
             self_update: false,
@@ -101,32 +149,33 @@ mod tests {
         }
     }
 
-    use std::path::PathBuf;
-
-    #[rstest]
-    #[case(InstallerKind::Ubi, true)]
-    #[case(InstallerKind::Curl, false)]
-    #[case(InstallerKind::Dmg, false)]
-    #[case(InstallerKind::Flatpak, false)]
-    fn test_create_installer_dispatch(#[case] kind: InstallerKind, #[case] expected_some: bool) {
-        let definition = sample_definition(kind, vec!["tool".to_string()]);
-        let context = default_context();
-
-        let result = create_installer(&definition, context).unwrap();
-        assert_eq!(result.is_some(), expected_some);
-        if let Some(dispatch) = result {
-            assert_eq!(dispatch.resolved_version.as_deref(), Some("1.0.0"));
+    #[test]
+    fn test_create_installer_dispatch() {
+        let cases = [
+            (InstallerKind::Curl, false),
+            (InstallerKind::Dmg, false),
+            (InstallerKind::Flatpak, false),
+            (InstallerKind::Github, true),
+        ];
+        for (kind, expected_some) in cases {
+            let definition = sample_definition(kind, vec!["tool".to_string()]);
+            let context = default_context();
+            let result = create_installer(&definition, context).unwrap();
+            assert_eq!(result.is_some(), expected_some);
+            if let Some(dispatch) = result {
+                assert_eq!(dispatch.resolved_version.as_deref(), Some("1.0.0"));
+            }
         }
     }
 
     #[test]
     fn test_create_installer_defaults_missing_bin() {
-        let mut definition = sample_definition(InstallerKind::Ubi, Vec::new());
+        let mut definition = sample_definition(InstallerKind::Curl, Vec::new());
         definition.name = "precious".to_string();
         definition.project = Some("houseabsolute/precious".to_string());
 
         let context = default_context();
         let installer = create_installer(&definition, context).unwrap();
-        assert!(installer.is_some());
+        assert!(installer.is_none());
     }
 }

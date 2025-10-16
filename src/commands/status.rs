@@ -1,9 +1,9 @@
-use crate::lockfile::ToolEntry as LockfileToolEntry;
+use crate::lockfile::ToolReceipt;
 use crate::{ui, Lockfile, Workspace, WorkspacePath};
 use anyhow::Result;
 use chrono::{DateTime, Local};
 use directories::BaseDirs;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -45,7 +45,7 @@ pub fn execute(workspace: &Workspace) -> Result<()> {
         ui::info("Skipping config inspection because no lockfile is present.");
     }
 
-    report_tools(workspace, lockfile.as_ref(), &display)?;
+    report_tools(workspace, lockfile.as_ref())?;
 
     Ok(())
 }
@@ -103,156 +103,65 @@ fn report_config_symlinks(lockfile: &Lockfile, display: &DisplayContext) -> Resu
     Ok(())
 }
 
-fn report_tools(
-    workspace: &Workspace,
-    lockfile: Option<&Lockfile>,
-    display: &DisplayContext,
-) -> Result<()> {
-    let tools = workspace.tools()?;
+fn report_tools(workspace: &Workspace, lockfile: Option<&Lockfile>) -> Result<()> {
+    let defined = workspace.tools()?;
 
-    let mut recorded: HashMap<String, Vec<&LockfileToolEntry>> = HashMap::new();
-    if let Some(lockfile) = lockfile {
-        for entry in lockfile.tool_symlinks() {
-            recorded.entry(entry.name.clone()).or_default().push(entry);
+    // Map of tool name -> receipts
+    let mut receipts: HashMap<String, Vec<&ToolReceipt>> = HashMap::new();
+    if let Some(lf) = lockfile {
+        for r in lf.tool_receipts() {
+            receipts.entry(r.name.clone()).or_default().push(r);
         }
     }
 
-    if tools.is_empty() {
-        if recorded.is_empty() {
+    if defined.is_empty() {
+        if receipts.is_empty() {
             ui::info("No tools defined for the active profile.");
         } else {
-            ui::warn("Lockfile lists tools that are not defined in the active profile:");
-            for (name, entries) in recorded {
-                let targets = join_targets(&entries, display);
+            ui::warn("Installed tools found in lockfile but not defined in manifest:");
+            for (name, rs) in receipts {
+                let versions: Vec<String> = rs.iter().map(|r| r.resolved_version.clone()).collect();
                 ui::warn(format!(
-                    "Tool '{}' remains installed (targets: {}). Run 'dws cleanup' to remove it.",
-                    name, targets
+                    "Tool '{}' (installed versions: {}) - consider removing with future cleanup.",
+                    name,
+                    versions.join(", ")
                 ));
             }
         }
         return Ok(());
     }
 
-    let total_defined = tools.len();
-    let mut installed_ok = 0usize;
-    let mut reports: Vec<(String, Vec<String>, Vec<String>)> = Vec::new();
-
-    for (name, _entry) in tools.iter() {
-        let entries = recorded.remove(name).unwrap_or_default();
-        if entries.is_empty() {
-            reports.push((
-                name.clone(),
-                Vec::new(),
-                vec![format!(
-                    "Tool '{}' is defined but not installed. Run 'dws sync' to install it.",
+    let mut ok_count = 0usize;
+    for (name, _) in defined.iter() {
+        match receipts.remove(name) {
+            None => {
+                ui::warn(format!(
+                    "Tool '{}' defined but no receipt found. Run 'dws sync' to install.",
                     name
-                )],
-            ));
-            continue;
-        }
-
-        let versions_set = collect_versions(&entries);
-        let versions = if versions_set.is_empty() {
-            vec!["unknown".to_string()]
-        } else {
-            versions_set.into_iter().collect::<Vec<_>>()
-        };
-
-        let mut issues = Vec::new();
-        for entry in &entries {
-            match check_symlink(&entry.source, &entry.target) {
-                LinkState::Ok => {}
-                LinkState::MissingTarget => issues.push(format!(
-                    "Tool '{}' {} missing symlink at {} (expected source {}).",
-                    name,
-                    entry.version,
-                    display.format(&entry.target),
-                    display.format(&entry.source)
-                )),
-                LinkState::NotSymlink => issues.push(format!(
-                    "Tool '{}' {} target exists but is not a symlink: {}.",
-                    name,
-                    entry.version,
-                    display.format(&entry.target)
-                )),
-                LinkState::WrongTarget { actual } => issues.push(format!(
-                    "Tool '{}' {} target points to {} (expected {}).",
-                    name,
-                    entry.version,
-                    display.format(&actual),
-                    display.format(&entry.source)
-                )),
-                LinkState::MissingSource => issues.push(format!(
-                    "Tool '{}' {} source missing at {} (symlink at {}).",
-                    name,
-                    entry.version,
-                    display.format(&entry.source),
-                    display.format(&entry.target)
-                )),
-                LinkState::IoError(err) => issues.push(format!(
-                    "Tool '{}' {}: failed to inspect {} ({})",
-                    name,
-                    entry.version,
-                    display.format(&entry.target),
-                    err
-                )),
+                ));
             }
-        }
-
-        if issues.is_empty() {
-            installed_ok += 1;
-        }
-
-        reports.push((name.clone(), versions, issues));
-    }
-
-    ui::status(
-        "Tools",
-        format!("{}/{} installed", installed_ok, total_defined),
-    );
-
-    for (name, versions, issues) in reports {
-        if issues.is_empty() {
-            let version_display = versions.join(", ");
-            ui::success("Tool", format!("{} {}", name, version_display));
-        } else {
-            for issue in issues {
-                ui::warn(issue);
+            Some(rs) => {
+                // For Phase 0 we only show the first resolved version
+                let versions: Vec<String> = rs.iter().map(|r| r.resolved_version.clone()).collect();
+                ui::success("Tool", format!("{} {}", name, versions.join(", ")));
+                ok_count += 1;
             }
         }
     }
 
-    for (name, entries) in recorded {
-        let versions = collect_versions(&entries);
-        let version_display = if versions.is_empty() {
-            "unknown".to_string()
-        } else {
-            versions.iter().cloned().collect::<Vec<_>>().join(", ")
-        };
-        let targets = join_targets(&entries, display);
+    ui::status("Tools", format!("{}/{} installed", ok_count, defined.len()));
+
+    // Any remaining receipts are orphaned
+    for (name, rs) in receipts {
+        let versions: Vec<String> = rs.iter().map(|r| r.resolved_version.clone()).collect();
         ui::warn(format!(
-            "Tool '{}' {} is recorded in the lockfile but not defined in the active profile (targets: {}).",
-            name, version_display, targets
+            "Orphaned tool '{}' (versions: {}) not present in manifest.",
+            name,
+            versions.join(", ")
         ));
     }
 
     Ok(())
-}
-
-fn collect_versions(entries: &[&LockfileToolEntry]) -> BTreeSet<String> {
-    let mut versions = BTreeSet::new();
-    for entry in entries {
-        versions.insert(entry.version.clone());
-    }
-    versions
-}
-
-fn join_targets(entries: &[&LockfileToolEntry], display: &DisplayContext) -> String {
-    entries
-        .iter()
-        .map(|entry| display.format(&entry.target))
-        .collect::<Vec<_>>()
-        .join(", ")
 }
 
 fn format_timestamp(raw: &str) -> String {
@@ -331,6 +240,7 @@ impl DisplayContext {
         }
     }
 
+    #[allow(dead_code)]
     fn format(&self, path: &Path) -> String {
         if let Some(home) = &self.home_dir {
             if let Ok(stripped) = path.strip_prefix(home) {
