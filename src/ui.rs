@@ -1,5 +1,5 @@
 use anstyle::{AnsiColor, Style};
-use atty::Stream;
+use is_terminal::IsTerminal;
 use std::fmt::Display;
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
@@ -15,8 +15,13 @@ enum StatusKind {
     Error,
 }
 
-fn supports_color(stream: Stream) -> bool {
-    atty::is(stream) && std::env::var_os("NO_COLOR").is_none()
+fn supports_color(is_err: bool) -> bool {
+    let is_tty = if is_err {
+        io::stderr().is_terminal()
+    } else {
+        io::stdout().is_terminal()
+    };
+    is_tty && std::env::var_os("NO_COLOR").is_none()
 }
 
 fn style_for(kind: StatusKind) -> Style {
@@ -31,16 +36,13 @@ fn style_for(kind: StatusKind) -> Style {
 }
 
 fn write_status(kind: StatusKind, label: &str, message: &str) {
-    let stream = match kind {
-        StatusKind::Warn | StatusKind::Error => Stream::Stderr,
-        _ => Stream::Stdout,
-    };
+    let is_err = matches!(kind, StatusKind::Warn | StatusKind::Error);
 
-    let use_color = supports_color(stream);
-    let mut handle: Box<dyn Write> = match stream {
-        Stream::Stdout => Box::new(io::stdout().lock()),
-        Stream::Stderr => Box::new(io::stderr().lock()),
-        Stream::Stdin => unreachable!("stdin stream is not used for status output"),
+    let use_color = supports_color(is_err);
+    let mut handle: Box<dyn Write> = if is_err {
+        Box::new(io::stderr().lock())
+    } else {
+        Box::new(io::stdout().lock())
     };
 
     let padded_label = if label.is_empty() {
