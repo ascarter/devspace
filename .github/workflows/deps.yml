@@ -1,0 +1,160 @@
+name: Dependency Health
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: "0 6 1 */3 *" # Quarterly audit (Jan/Apr/Jul/Oct 06:00 UTC)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: short
+
+concurrency:
+  group: deps-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test-lint:
+    name: Build, Test, Lint (Rust ${{ matrix.toolchain }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [ stable, 1.74.0 ] # 1.74.0 as example MSRV; update & document when changed
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install toolchain (${{ matrix.toolchain }})
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          components: rustfmt, clippy
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ matrix.toolchain }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-${{ matrix.toolchain }}-
+
+      - name: Format check
+        run: cargo fmt --all --check
+
+      - name: Clippy (deny warnings)
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Build
+        run: cargo build --all --all-features
+
+      - name: Tests
+        run: cargo test --all --all-features --no-fail-fast
+
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-audit-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-audit-${{ runner.os }}-
+      - name: Install cargo-audit
+        run: cargo install cargo-audit || echo "cargo-audit already installed"
+      - name: Run cargo audit
+        run: cargo audit
+
+  license-policy:
+    name: License / Policy Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-deny-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-deny-${{ runner.os }}-
+      - name: Install cargo-deny
+        run: cargo install cargo-deny || echo "cargo-deny already installed"
+      - name: Deny check
+        run: cargo deny check
+
+  version-drift:
+    name: Outdated (Informational)
+    runs-on: ubuntu-latest
+    continue-on-error: true  # Do not fail PRs on drift; advisory only
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-outdated-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-outdated-${{ runner.os }}-
+      - name: Install cargo-outdated
+        run: cargo install cargo-outdated || echo "cargo-outdated already installed"
+      - name: Check root deps
+        run: cargo outdated --root-deps-only || true
+      - name: Save outdated summary
+        run: cargo outdated --root-deps-only > outdated.txt || true
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: outdated-report
+          path: outdated.txt
+          retention-days: 14
+
+  summarize:
+    name: Summary Gate
+    runs-on: ubuntu-latest
+    needs:
+      - build-test-lint
+      - security-audit
+      - license-policy
+      - version-drift
+    steps:
+      - name: Outcome
+        run: |
+          echo "Dependency health workflow complete."
+          echo "Results:"
+          echo " - Build/Test/Lint: ${{ needs.build-test-lint.result }}"
+          echo " - Security Audit:   ${{ needs.security-audit.result }}"
+          echo " - License Policy:   ${{ needs.license-policy.result }}"
+          echo " - Version Drift:    ${{ needs.version-drift.result }}"
+          if [ "${{ needs.security-audit.result }}" != "success" ]; then
+            echo "::warning title=Security Audit::Audit did not succeed."
+          fi
+          if [ "${{ needs.license-policy.result }}" != "success" ]; then
+            echo "::warning title=License Policy::License/policy check did not succeed."
+          fi
+          echo "Review 'outdated-report' artifact for upgrade opportunities."
