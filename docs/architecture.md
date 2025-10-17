@@ -157,11 +157,25 @@ status = "ok"
 ```
 
 **Purpose:**
-- Captures authoritative receipt per installed tool/version (binaries & extras)
+- Captures authoritative receipt per installed tool/version (binaries, extras, asset metadata)
 - Enables reliable cleanup, update decisions, and integrity verification
-- Provides audit trail (resolved vs manifest version, checksum, asset path)
-- Detects drift (missing sources / checksum mismatch)
+- Provides audit trail (resolved vs manifest version, checksum, asset path, matched pattern)
+- Surfaces drift (missing sources, broken symlinks, deleted archives) via `dws status`
 - Updated atomically after successful add/install/update operations
+
+### Tool Receipt Schema
+
+Each entry in `tool_receipts` stores:
+
+| Field | Description |
+| ----- | ----------- |
+| `name` | Tool identifier (manifest key). |
+| `manifest_version` / `resolved_version` | Requested vs resolved version ("latest" vs concrete tag). |
+| `installer_kind` | Backend responsible (`github`, `script`, etc.). |
+| `installed_at` | RFC 3339 timestamp when the receipt was written. |
+| `binaries[]` | Symlink metadata (`link`, `source`, `target`) for executables inside the cache. |
+| `extras[]` | Additional managed symlinks (man pages, completions, arbitrary files). |
+| `asset` | Optional release asset record with `name`, `url`, `checksum`, `archive_path`, `extract_dir`, and matched filter info. |
 
 ## `dws.toml` Format
 

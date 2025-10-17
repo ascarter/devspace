@@ -72,6 +72,27 @@ dws profiles
 dws use work
 ```
 
+### Status Diagnostics
+
+`dws status` now inspects the lockfile contents and reports:
+
+- **Binaries/extras** — verifies every recorded symlink still targets the cached tool contents.
+- **Asset metadata** — confirms the downloaded archive and extraction directory are present.
+- **Actionable warnings** — points out missing targets, wrong symlink destinations, or orphaned receipts.
+
+Example warning block:
+
+```
+Tool ripgrep v14.0.0 (binaries: 1, extras: 2)
+Tool 'uv' defined but no receipt found. Run 'dws sync' to install.
+Warning Binary target missing: ~/.local/state/dws/bin/uv (expected -> ~/.cache/dws/tools/uv/v1.40.0/uv)
+Warning Extra target missing (completion): ~/.local/state/dws/share/zsh/site-functions/_uv
+Warning Asset archive missing: ~/.cache/dws/tools/uv/v1.40.0/uv.tar.gz
+Tools 2/3 installed
+```
+
+Run `dws status` after a failed install or manual cleanup to surface these hints quickly.
+
 ## Workspace Structure
 
 ```
@@ -164,9 +185,9 @@ Tool entries are layered as follows:
    fpath=($HOME/.local/state/dws/share/zsh/site-functions $fpath)
    ```
 
-3. **Tool installation**: Tools cached in `~/.cache/dws/`, symlinked to state
+3. **Tool installation**: Tools are downloaded to `~/.cache/dws/tools/<name>/<version>/`, extracted in-place, and binaries/extras are symlinked into `~/.local/state/dws/{bin,share}`.
 
-4. **Lockfile tracking**: `~/.local/state/dws/dws.lock` tracks installed symlinks
+4. **Lockfile tracking**: `~/.local/state/dws/dws.lock` records binaries, extras, and release asset metadata so `dws status` (and future update flows) can detect drift.
 
 ## Self-Management
 
