@@ -346,6 +346,101 @@ fn test_status_reports_active_profile_and_config() {
         );
 }
 
+#[test]
+#[serial]
+fn test_status_reports_tool_warnings() {
+    let temp = TempDir::new().unwrap();
+    let config_home = temp.path();
+    let state_home = temp.path().join("state");
+    let cache_home = temp.path().join("cache");
+    let workspace_dir = config_home.join("dws");
+    let profiles_dir = workspace_dir.join("profiles/default");
+    fs::create_dir_all(&profiles_dir).unwrap();
+
+    fs::write(
+        profiles_dir.join("dws.toml"),
+        r#"
+[tools.mock]
+installer = "github"
+project = "owner/mock"
+version = "v1.0.0"
+asset_filter = ["mock"]
+checksum = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        "#,
+    )
+    .unwrap();
+
+    fs::write(
+        workspace_dir.join("config.toml"),
+        r#"
+active_profile = "default"
+        "#,
+    )
+    .unwrap();
+
+    fs::create_dir_all(state_home.join("dws")).unwrap();
+    let cache_tools_dir = cache_home.join("dws/tools/mock/v1.0.0");
+    let bin_target = state_home.join("bin/mock");
+    let extra_target = state_home.join("share/zsh/site-functions/_mock");
+    let archive_path = cache_tools_dir.join("mock.tar.gz");
+    let extract_dir = cache_tools_dir.join("contents");
+
+    let lockfile_contents = format!(
+        r#"
+version = 2
+
+[metadata]
+installed_at = "2025-01-01T00:00:00Z"
+
+[[tool_receipts]]
+name = "mock"
+manifest_version = "latest"
+resolved_version = "v1.0.0"
+installer_kind = "github"
+installed_at = "2025-01-01T00:00:00Z"
+
+[[tool_receipts.binaries]]
+link = "mock"
+source = "{bin_source}"
+target = "{bin_target}"
+
+[[tool_receipts.extras]]
+kind = "completion"
+source = "{extra_source}"
+target = "{extra_target}"
+
+[tool_receipts.asset]
+name = "mock.tar.gz"
+url = "https://example.com/mock.tar.gz"
+checksum = "deadbeef"
+archive_path = "{archive_path}"
+extract_dir = "{extract_dir}"
+pattern_index = 0
+pattern = "mock"
+        "#,
+        bin_source = cache_tools_dir.join("mock/bin/mock").display(),
+        bin_target = bin_target.display(),
+        extra_source = cache_tools_dir.join("mock/completion/_mock").display(),
+        extra_target = extra_target.display(),
+        archive_path = archive_path.display(),
+        extract_dir = extract_dir.display()
+    );
+    fs::write(state_home.join("dws/dws.lock"), lockfile_contents).unwrap();
+
+    Command::cargo_bin("dws")
+        .unwrap()
+        .env("XDG_CONFIG_HOME", config_home)
+        .env("XDG_STATE_HOME", &state_home)
+        .env("XDG_CACHE_HOME", &cache_home)
+        .env("HOME", config_home)
+        .arg("status")
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("Binary target missing"))
+        .stderr(predicate::str::contains("Extra target missing"))
+        .stderr(predicate::str::contains("Asset archive missing"));
+}
+
 fn copy_dir_all(src: &Path, dst: &Path) {
     fs::create_dir_all(dst).unwrap();
     for entry in fs::read_dir(src).unwrap() {
