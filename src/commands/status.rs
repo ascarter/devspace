@@ -45,7 +45,7 @@ pub fn execute(workspace: &Workspace) -> Result<()> {
         ui::info("Skipping config inspection because no lockfile is present.");
     }
 
-    report_tools(workspace, lockfile.as_ref())?;
+    report_tools(workspace, &display, lockfile.as_ref())?;
 
     Ok(())
 }
@@ -103,7 +103,11 @@ fn report_config_symlinks(lockfile: &Lockfile, display: &DisplayContext) -> Resu
     Ok(())
 }
 
-fn report_tools(workspace: &Workspace, lockfile: Option<&Lockfile>) -> Result<()> {
+fn report_tools(
+    workspace: &Workspace,
+    display: &DisplayContext,
+    lockfile: Option<&Lockfile>,
+) -> Result<()> {
     let defined = workspace.tools()?;
 
     // Map of tool name -> receipts
@@ -141,10 +145,32 @@ fn report_tools(workspace: &Workspace, lockfile: Option<&Lockfile>) -> Result<()
                 ));
             }
             Some(rs) => {
-                // For Phase 0 we only show the first resolved version
                 let versions: Vec<String> = rs.iter().map(|r| r.resolved_version.clone()).collect();
-                ui::success("Tool", format!("{} {}", name, versions.join(", ")));
-                ok_count += 1;
+                let (binary_total, extra_total, issues) = verify_tool_receipts(&rs, display);
+
+                if issues.is_empty() {
+                    ui::success(
+                        "Tool",
+                        format!(
+                            "{} {} (binaries: {}, extras: {})",
+                            name,
+                            versions.join(", "),
+                            binary_total,
+                            extra_total
+                        ),
+                    );
+                    ok_count += 1;
+                } else {
+                    ui::warn(format!(
+                        "Tool '{}' has {} issue(s) across version(s) {}",
+                        name,
+                        issues.len(),
+                        versions.join(", ")
+                    ));
+                    for issue in issues {
+                        ui::warn(issue);
+                    }
+                }
             }
         }
     }
@@ -162,6 +188,101 @@ fn report_tools(workspace: &Workspace, lockfile: Option<&Lockfile>) -> Result<()
     }
 
     Ok(())
+}
+
+fn verify_tool_receipts(
+    receipts: &[&ToolReceipt],
+    display: &DisplayContext,
+) -> (usize, usize, Vec<String>) {
+    let mut issues = Vec::new();
+    let mut binaries = 0usize;
+    let mut extras = 0usize;
+
+    for receipt in receipts {
+        for bin in &receipt.binaries {
+            binaries += 1;
+            match check_symlink(&bin.source, &bin.target) {
+                LinkState::Ok => {}
+                LinkState::MissingTarget => issues.push(format!(
+                    "Binary target missing: {} (expected -> {})",
+                    display.format(&bin.target),
+                    display.format(&bin.source)
+                )),
+                LinkState::NotSymlink => issues.push(format!(
+                    "Binary target exists but is not a symlink: {}",
+                    display.format(&bin.target)
+                )),
+                LinkState::WrongTarget { actual } => issues.push(format!(
+                    "Binary target points to {} but lockfile expects {} -> {}",
+                    display.format(&actual),
+                    display.format(&bin.target),
+                    display.format(&bin.source)
+                )),
+                LinkState::MissingSource => issues.push(format!(
+                    "Binary source missing: {} (symlink at {})",
+                    display.format(&bin.source),
+                    display.format(&bin.target)
+                )),
+                LinkState::IoError(err) => issues.push(format!(
+                    "Failed to inspect binary symlink {}: {}",
+                    display.format(&bin.target),
+                    err
+                )),
+            }
+        }
+
+        for extra in &receipt.extras {
+            extras += 1;
+            match check_symlink(&extra.source, &extra.target) {
+                LinkState::Ok => {}
+                LinkState::MissingTarget => issues.push(format!(
+                    "Extra target missing ({}): {}",
+                    extra.kind,
+                    display.format(&extra.target)
+                )),
+                LinkState::NotSymlink => issues.push(format!(
+                    "Extra target exists but is not a symlink ({}): {}",
+                    extra.kind,
+                    display.format(&extra.target)
+                )),
+                LinkState::WrongTarget { actual } => issues.push(format!(
+                    "Extra symlink mismatch ({}): {} points to {} but expected {}",
+                    extra.kind,
+                    display.format(&extra.target),
+                    display.format(&actual),
+                    display.format(&extra.source)
+                )),
+                LinkState::MissingSource => issues.push(format!(
+                    "Extra source missing ({}): {}",
+                    extra.kind,
+                    display.format(&extra.source)
+                )),
+                LinkState::IoError(err) => issues.push(format!(
+                    "Failed to inspect extra symlink {} ({}): {}",
+                    display.format(&extra.target),
+                    extra.kind,
+                    err
+                )),
+            }
+        }
+
+        if let Some(asset) = &receipt.asset {
+            if !asset.archive_path.exists() {
+                issues.push(format!(
+                    "Asset archive missing: {}",
+                    display.format(&asset.archive_path)
+                ));
+            }
+            if !asset.extract_dir.exists() {
+                issues.push(format!(
+                    "Asset contents directory missing: {}",
+                    display.format(&asset.extract_dir)
+                ));
+            }
+        }
+    }
+
+    (binaries, extras, issues)
 }
 
 fn format_timestamp(raw: &str) -> String {
