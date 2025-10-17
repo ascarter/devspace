@@ -597,6 +597,19 @@ mod tests {
     }
 
     #[test]
+    fn parse_sha256_validates_length() {
+        let err = parse_sha256("sha256:deadbeef").unwrap_err();
+        assert!(err.to_string().contains("64"));
+    }
+
+    #[test]
+    fn parse_sha256_requires_prefix() {
+        let err = parse_sha256("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
+            .unwrap_err();
+        assert!(err.to_string().contains("sha256"));
+    }
+
+    #[test]
     fn parse_release_payload() {
         let payload = r#"
         {
@@ -743,5 +756,51 @@ mod tests {
         assert!(target
             .to_string_lossy()
             .contains("share/zsh/site-functions/_rg"));
+    }
+
+    #[test]
+    fn resolve_extra_target_absolute_other() {
+        let temp = TempDir::new().unwrap();
+        let context = InstallContext {
+            cache_tools_dir: temp.path().join("cache"),
+            bin_dir: temp.path().join("bin"),
+            share_dir: temp.path().join("share"),
+        };
+        fs::create_dir_all(&context.share_dir).unwrap();
+
+        let extra = ToolExtra {
+            source: "/absolute/path".to_string(),
+            kind: ExtraKind::Other,
+            shell: None,
+            target: None,
+        };
+
+        let resolved = context.cache_tools_dir.join("extract/absolute/path");
+        fs::create_dir_all(resolved.parent().unwrap()).unwrap();
+        fs::write(&resolved, "content").unwrap();
+
+        let target = resolve_extra_target(&context, "rg", &extra, &resolved).unwrap();
+        assert_eq!(target, PathBuf::from("/absolute/path"));
+    }
+
+    #[test]
+    fn resolve_binary_path_missing_errors() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join("contents");
+        fs::create_dir_all(&root).unwrap();
+        let err = resolve_binary_path(&root, "missing").unwrap_err();
+        assert!(err.to_string().contains("not found"));
+    }
+
+    #[test]
+    fn compute_sha256_matches_known_digest() {
+        let temp = TempDir::new().unwrap();
+        let file = temp.path().join("file");
+        fs::write(&file, b"hello world").unwrap();
+        let digest = compute_sha256(&file).unwrap();
+        assert_eq!(
+            format_digest(&digest),
+            "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+        );
     }
 }

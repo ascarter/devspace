@@ -169,6 +169,7 @@ impl Lockfile {
     /// This should be preferred over calling `add_tool_receipt` directly in installer backends.
     /// `manifest_version` is the version string as specified in the manifest (may be "latest").
     /// `resolved_version` is the concrete tag/version determined during installation.
+    #[allow(clippy::too_many_arguments)]
     pub fn record_tool_install(
         &mut self,
         name: &str,
