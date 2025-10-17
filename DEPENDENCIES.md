@@ -224,11 +224,17 @@ PR must include:
 
 ## 9. Monitoring & Automation
 
-Planned CI workflow additions:
-- Matrix: stable + minimal MSRV (document MSRV once frozen).
-- Cache: `~/.cargo/registry` + `target/`.
-- Separate jobs: Build, Lint (clippy), Security (audit/deny), Drift (outdated), Tests.
-- Failure in any security job blocks merge; outdated is informational unless critical patch available.
+Current CI coverage:
+- GitHub Actions workflow on push/PR to `main`.
+- Jobs: lint/format (`cargo fmt --all -- --check`, `cargo clippy --all-targets --all-features -- -D warnings`) and build/test (`cargo build --locked --all-targets`, `cargo test --locked`).
+- Matrix: `ubuntu-latest`, `macos-latest`.
+- `RUST_BACKTRACE=1` enabled for tests to simplify debugging panics.
+
+Planned enhancements:
+- Add MSRV lane once the project's MSRV is formalized.
+- Cache `~/.cargo/registry` and `target/` to speed repeat runs.
+- Introduce dedicated security/drift jobs (cargo audit/deny/outdated).
+- Ensure security jobs are gating; treat outdated as informational unless urgent.
 
 ---
 

@@ -54,6 +54,8 @@ This document is the single source of truth for AI and human collaborators who a
 - `cargo test -- --include-ignored` – Executes CLI tests that assume isolated XDG directories.
 - `cargo run -- --help` – Confirm CLI wiring and help text.
 
+GitHub Actions runs `cargo fmt --all -- --check`, `cargo clippy --all-targets --all-features -- -D warnings`, and the locked build/test matrix (`ubuntu-latest`, `macos-latest`) on every push/PR targeting `main`. Keep those commands clean locally to avoid CI churn.
+
 ## Coding Style & Naming Conventions
 
 - Uphold Rust 2021 idioms: four-space indentation, `snake_case` for items, `CamelCase` for types, `SCREAMING_SNAKE_CASE` for constants.

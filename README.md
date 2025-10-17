@@ -223,6 +223,17 @@ cargo build
 cargo test
 ```
 
+### Continuous Integration
+
+GitHub Actions runs on pushes and pull requests to `main`. The workflow enforces:
+
+- `cargo fmt --all -- --check`
+- `cargo clippy --all-targets --all-features -- -D warnings`
+- `cargo build --locked --all-targets`
+- `cargo test --locked`
+
+Linux (`ubuntu-latest`) and macOS runners execute the build/test matrix so regressions surface across both platforms. Keep local runs clean before pushing.
+
 **Run**:
 ```bash
 cargo run -- --help

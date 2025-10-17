@@ -288,6 +288,7 @@ dws status    # Show what's installed
 - ✅ Single workspace model (multi-profile support via workspaces directory)
 - ✅ Shell auto-detection from $SHELL
 - ✅ Template structure with default shell configs
+- ✅ Base CI workflow (fmt, clippy, build, test on Ubuntu + macOS)
 - 🚧 Refactor: internal forge/script installer backends (github/gitlab/script) replacing `ubi`
 - 🚧 New manifest parser (structured bin/extras, asset_filter regex list, mandatory checksum)
 - 🚧 Cleanup enhancements (auto repair/remove broken symlinks, prune inactive versions)
