@@ -16,6 +16,9 @@ use zip::ZipArchive;
 
 use flate2::read::GzDecoder;
 
+use super::InstallContext;
+use crate::toolset::{ExtraKind, ToolExtra};
+
 const API_ROOT: &str = "https://api.github.com";
 const DEFAULT_USER_AGENT: &str = "dws/0.1";
 
@@ -492,9 +495,88 @@ pub fn resolve_binary_path(extract_root: &Path, source: &str) -> Result<PathBuf>
     );
 }
 
+pub fn resolve_extra_path(extract_root: &Path, extra: &ToolExtra) -> Result<PathBuf> {
+    resolve_binary_path(extract_root, &extra.source)
+}
+
+pub fn resolve_extra_target(
+    context: &InstallContext,
+    tool_slug: &str,
+    extra: &ToolExtra,
+    resolved_source: &Path,
+) -> Result<PathBuf> {
+    if let Some(target) = &extra.target {
+        let expanded = shellexpand::env(target)
+            .map_err(|err| anyhow::anyhow!("Failed to expand target '{}': {}", target, err))?;
+        return Ok(PathBuf::from(expanded.as_ref()));
+    }
+
+    match extra.kind {
+        ExtraKind::Man => manpage_target(&context.share_dir, resolved_source),
+        ExtraKind::Completion => {
+            let shell = extra
+                .shell
+                .as_deref()
+                .context("Completion extra requires a shell field")?
+                .to_ascii_lowercase();
+            completion_target(&context.share_dir, &shell, resolved_source)
+        }
+        ExtraKind::Other => other_extra_target(&context.share_dir, tool_slug, &extra.source),
+    }
+}
+
+fn manpage_target(share_dir: &Path, resolved_source: &Path) -> Result<PathBuf> {
+    let section = resolved_source
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .filter(|ext| !ext.is_empty())
+        .unwrap_or("1");
+    let man_dir = share_dir.join("man").join(format!("man{section}"));
+    fs::create_dir_all(&man_dir)
+        .with_context(|| format!("Failed to create man directory {:?}", man_dir))?;
+    let filename = resolved_source
+        .file_name()
+        .context("Man page missing file name")?;
+    Ok(man_dir.join(filename))
+}
+
+fn completion_target(share_dir: &Path, shell: &str, resolved_source: &Path) -> Result<PathBuf> {
+    let dir = match shell {
+        "zsh" => share_dir.join("zsh").join("site-functions"),
+        "bash" => share_dir.join("bash-completions"),
+        "fish" => share_dir.join("fish").join("vendor_completions.d"),
+        other => bail!("Unsupported completion shell '{}'.", other),
+    };
+
+    fs::create_dir_all(&dir)
+        .with_context(|| format!("Failed to create completion directory {:?}", dir))?;
+
+    let filename = resolved_source
+        .file_name()
+        .context("Completion file missing file name")?;
+
+    Ok(dir.join(filename))
+}
+
+fn other_extra_target(share_dir: &Path, tool_slug: &str, source: &str) -> Result<PathBuf> {
+    let relative = Path::new(source);
+    if relative.is_absolute() {
+        return Ok(relative.to_path_buf());
+    }
+
+    let target = share_dir.join("extras").join(tool_slug).join(relative);
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create extras directory {:?}", parent))?;
+    }
+
+    Ok(target)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
 
     #[test]
     fn endpoint_latest() {
@@ -609,5 +691,57 @@ mod tests {
         let filters = vec!["[".to_string()];
         let err = release.select_asset(&filters).unwrap_err();
         assert!(err.to_string().contains("Invalid asset_filter regex"));
+    }
+
+    #[test]
+    fn resolve_extra_target_man_defaults_section() {
+        let temp = TempDir::new().unwrap();
+        let context = InstallContext {
+            cache_tools_dir: temp.path().join("cache"),
+            bin_dir: temp.path().join("bin"),
+            share_dir: temp.path().join("share"),
+        };
+        fs::create_dir_all(&context.share_dir).unwrap();
+
+        let extra = ToolExtra {
+            source: "docs/rg.1".to_string(),
+            kind: ExtraKind::Man,
+            shell: None,
+            target: None,
+        };
+
+        let resolved = context.cache_tools_dir.join("extract/docs/rg.1");
+        fs::create_dir_all(resolved.parent().unwrap()).unwrap();
+        fs::write(&resolved, "man").unwrap();
+
+        let target = resolve_extra_target(&context, "rg", &extra, &resolved).unwrap();
+        assert!(target.to_string_lossy().contains("man1/rg.1"));
+    }
+
+    #[test]
+    fn resolve_extra_target_completion_shell_dir() {
+        let temp = TempDir::new().unwrap();
+        let context = InstallContext {
+            cache_tools_dir: temp.path().join("cache"),
+            bin_dir: temp.path().join("bin"),
+            share_dir: temp.path().join("share"),
+        };
+        fs::create_dir_all(&context.share_dir).unwrap();
+
+        let extra = ToolExtra {
+            source: "completions/_rg".to_string(),
+            kind: ExtraKind::Completion,
+            shell: Some("zsh".to_string()),
+            target: None,
+        };
+
+        let resolved = context.cache_tools_dir.join("extract/completions/_rg");
+        fs::create_dir_all(resolved.parent().unwrap()).unwrap();
+        fs::write(&resolved, "comp").unwrap();
+
+        let target = resolve_extra_target(&context, "rg", &extra, &resolved).unwrap();
+        assert!(target
+            .to_string_lossy()
+            .contains("share/zsh/site-functions/_rg"));
     }
 }

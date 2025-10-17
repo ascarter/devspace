@@ -58,6 +58,15 @@ pub struct ToolReceipt {
     /// Linked binaries for this tool
     #[serde(default)]
     pub binaries: Vec<BinaryLink>,
+    #[serde(default)]
+    pub extras: Vec<ExtraLink>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExtraLink {
+    pub kind: String,
+    pub source: PathBuf,
+    pub target: PathBuf,
 }
 
 impl Default for Lockfile {
@@ -109,6 +118,7 @@ impl Lockfile {
     }
 
     /// Add a tool receipt (skeleton placeholder for Phase 0)
+    #[allow(clippy::too_many_arguments)]
     pub fn add_tool_receipt(
         &mut self,
         name: String,
@@ -117,6 +127,7 @@ impl Lockfile {
         installer_kind: String,
         installed_at: String,
         binaries: Vec<BinaryLink>,
+        extras: Vec<ExtraLink>,
     ) {
         self.tool_receipts.push(ToolReceipt {
             name,
@@ -125,6 +136,7 @@ impl Lockfile {
             installer_kind,
             installed_at,
             binaries,
+            extras,
         });
     }
 
@@ -140,6 +152,7 @@ impl Lockfile {
         resolved_version: &str,
         installer_kind: &str,
         binaries: Vec<BinaryLink>,
+        extras: Vec<ExtraLink>,
     ) {
         let installed_at = chrono::Utc::now().to_rfc3339();
         self.add_tool_receipt(
@@ -149,6 +162,7 @@ impl Lockfile {
             installer_kind.to_string(),
             installed_at,
             binaries,
+            extras,
         );
     }
 
@@ -206,6 +220,7 @@ mod tests {
                 source: PathBuf::from("/cache/rg"),
                 target: PathBuf::from("/bin/rg"),
             }],
+            Vec::new(),
         );
 
         lockfile.save(&lockfile_path).unwrap();
@@ -234,6 +249,7 @@ mod tests {
                 source: PathBuf::from("/c"),
                 target: PathBuf::from("/bin/tool"),
             }],
+            Vec::new(),
         );
 
         assert_eq!(lockfile.config_symlinks.len(), 1);
@@ -263,6 +279,7 @@ mod tests {
                 source: PathBuf::from("/cache/rg"),
                 target: PathBuf::from("/bin/rg"),
             }],
+            Vec::new(),
         );
         lockfile.add_tool_receipt(
             "fd".to_string(),
@@ -275,6 +292,7 @@ mod tests {
                 source: PathBuf::from("/cache/fd"),
                 target: PathBuf::from("/bin/fd"),
             }],
+            Vec::new(),
         );
 
         // Test config symlinks iterator
@@ -313,6 +331,7 @@ mod tests {
                 source: PathBuf::from("/cache/rg"),
                 target: PathBuf::from("/bin/rg"),
             }],
+            Vec::new(),
         );
         lockfile.add_tool_receipt(
             "fd".to_string(),
@@ -325,6 +344,7 @@ mod tests {
                 source: PathBuf::from("/cache/fd"),
                 target: PathBuf::from("/bin/fd"),
             }],
+            Vec::new(),
         );
 
         lockfile.retain_tool_receipts(|entry| entry.name != "fd");
@@ -349,6 +369,7 @@ mod tests {
                 source: PathBuf::from("/cache/exa"),
                 target: PathBuf::from("/bin/exa"),
             }],
+            Vec::new(),
         );
 
         let receipts: Vec<_> = lockfile.tool_receipts().collect();

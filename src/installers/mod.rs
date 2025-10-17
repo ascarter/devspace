@@ -1,5 +1,5 @@
-use crate::lockfile::{BinaryLink, Lockfile};
-use crate::toolset::{InstallerKind, ToolBinary, ToolDefinition};
+use crate::lockfile::{BinaryLink, ExtraLink, Lockfile};
+use crate::toolset::{InstallerKind, ToolBinary, ToolDefinition, ToolExtra};
 use anyhow::{bail, Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -16,6 +16,7 @@ use self::github::GithubClient;
 pub(crate) struct InstallContext {
     pub cache_tools_dir: PathBuf,
     pub bin_dir: PathBuf,
+    pub share_dir: PathBuf,
 }
 
 pub(crate) trait ToolInstaller {
@@ -33,6 +34,7 @@ struct GithubInstaller {
     project: String,
     version: Option<String>,
     bins: Vec<ToolBinary>,
+    extras: Vec<ToolExtra>,
     asset_filters: Vec<String>,
     client: GithubClient,
     checksum: [u8; 32],
@@ -67,6 +69,7 @@ impl GithubInstaller {
             project,
             version: def.version.clone(),
             bins: def.bin.clone(),
+            extras: def.extras.clone(),
             asset_filters: def.asset_filter.clone(),
             client,
             checksum,
@@ -208,12 +211,41 @@ impl ToolInstaller for GithubInstaller {
             });
         }
 
+        let mut extra_links = Vec::new();
+        for extra in &self.extras {
+            let resolved_source =
+                github::resolve_extra_path(&extract_dir, extra).with_context(|| {
+                    format!(
+                        "Failed to locate extra '{}' (kind='{}') for tool '{}'",
+                        extra.source, extra.kind, self.name
+                    )
+                })?;
+
+            let target_path =
+                github::resolve_extra_target(&self.context, &tool_slug, extra, &resolved_source)?;
+
+            if target_path.exists() || target_path.symlink_metadata().is_ok() {
+                fs::remove_file(&target_path).with_context(|| {
+                    format!("Failed to remove existing extra at {:?}", target_path)
+                })?;
+            }
+
+            create_symlink(&resolved_source, &target_path)?;
+
+            extra_links.push(ExtraLink {
+                kind: extra.kind.to_string(),
+                source: resolved_source,
+                target: target_path,
+            });
+        }
+
         lockfile.record_tool_install(
             &self.name,
             &manifest_version,
             &resolved_version,
             "github",
             binary_links,
+            extra_links,
         );
         Ok(())
     }
@@ -344,6 +376,7 @@ mod tests {
         InstallContext {
             cache_tools_dir: PathBuf::from("/tmp/cache/tools"),
             bin_dir: PathBuf::from("/tmp/state/bin"),
+            share_dir: PathBuf::from("/tmp/state/share"),
         }
     }
 

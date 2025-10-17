@@ -313,6 +313,11 @@ impl Workspace {
                         let _ = fs::remove_file(&bin.target);
                     }
                 }
+                for extra in &receipt.extras {
+                    if extra.target.exists() || extra.target.symlink_metadata().is_ok() {
+                        let _ = fs::remove_file(&extra.target);
+                    }
+                }
             }
         }
 
@@ -724,6 +729,7 @@ impl Workspace {
         Ok(InstallContext {
             cache_tools_dir,
             bin_dir,
+            share_dir,
         })
     }
 
@@ -1178,6 +1184,13 @@ impl Workspace {
                     })?;
                 }
             }
+            for extra in &receipt.extras {
+                if extra.target.exists() || extra.target.symlink_metadata().is_ok() {
+                    fs::remove_file(&extra.target).with_context(|| {
+                        format!("Failed to remove tool extra symlink {:?}", extra.target)
+                    })?;
+                }
+            }
         }
 
         Ok(())
@@ -1550,6 +1563,7 @@ project = "BurntSushi/ripgrep"
                 source: PathBuf::from("/cache/tools/rg/14.0.0/rg"),
                 target: target.clone(),
             }],
+            Vec::new(),
         );
 
         // Inline removal of tool binary symlinks using lockfile receipts
@@ -1557,6 +1571,11 @@ project = "BurntSushi/ripgrep"
             for bin in &receipt.binaries {
                 if bin.target.exists() || bin.target.symlink_metadata().is_ok() {
                     let _ = fs::remove_file(&bin.target);
+                }
+            }
+            for extra in &receipt.extras {
+                if extra.target.exists() || extra.target.symlink_metadata().is_ok() {
+                    let _ = fs::remove_file(&extra.target);
                 }
             }
         }
@@ -2030,6 +2049,7 @@ version = "14.0.0"
                 source: source_bin.clone(),
                 target: valid_target.clone(),
             }],
+            Vec::new(),
         );
 
         // Prune unused bin symlinks
