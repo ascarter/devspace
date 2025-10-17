@@ -726,10 +726,13 @@ impl Workspace {
             )
         })?;
 
+        let github_api = installers::default_github_api()?;
+
         Ok(InstallContext {
             cache_tools_dir,
             bin_dir,
             share_dir,
+            github_api,
         })
     }
 

@@ -3,20 +3,26 @@ use crate::toolset::{InstallerKind, ToolBinary, ToolDefinition, ToolExtra};
 use anyhow::{bail, Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use tokio::runtime::Runtime;
 
 mod github;
-use self::github::GithubClient;
+pub(crate) use self::github::GithubApi;
+
+pub(crate) fn default_github_api() -> Result<Arc<dyn GithubApi>> {
+    github::default_api()
+}
 
 // Phase 0 refactor: removed external `ubi` installer backend.
 // Placeholder: future github/gitlab/script modules will be added here.
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 #[allow(dead_code)]
 pub(crate) struct InstallContext {
     pub cache_tools_dir: PathBuf,
     pub bin_dir: PathBuf,
     pub share_dir: PathBuf,
+    pub github_api: Arc<dyn GithubApi>,
 }
 
 pub(crate) trait ToolInstaller {
@@ -36,7 +42,6 @@ struct GithubInstaller {
     bins: Vec<ToolBinary>,
     extras: Vec<ToolExtra>,
     asset_filters: Vec<String>,
-    client: GithubClient,
     checksum: [u8; 32],
     context: InstallContext,
 }
@@ -62,8 +67,6 @@ impl GithubInstaller {
             );
         }
 
-        let client = GithubClient::from_env()?;
-
         Ok(Self {
             name: def.name.clone(),
             project,
@@ -71,7 +74,6 @@ impl GithubInstaller {
             bins: def.bin.clone(),
             extras: def.extras.clone(),
             asset_filters: def.asset_filter.clone(),
-            client,
             checksum,
             context,
         })
@@ -85,7 +87,8 @@ impl ToolInstaller for GithubInstaller {
     }
     fn install(&self, _runtime: Option<&mut Runtime>, lockfile: &mut Lockfile) -> Result<()> {
         let release = self
-            .client
+            .context
+            .github_api
             .fetch_release(&self.project, self.version.as_deref())?;
 
         let selected = release.select_asset(&self.asset_filters).with_context(|| {
@@ -117,7 +120,8 @@ impl ToolInstaller for GithubInstaller {
         let mut digest = if asset_path.exists() {
             github::compute_sha256(&asset_path)?
         } else {
-            self.client
+            self.context
+                .github_api
                 .download_asset(&selected.asset.browser_download_url, &asset_path)?
         };
 
@@ -132,7 +136,8 @@ impl ToolInstaller for GithubInstaller {
             }
 
             digest = self
-                .client
+                .context
+                .github_api
                 .download_asset(&selected.asset.browser_download_url, &asset_path)?;
 
             if digest != self.checksum {
@@ -321,9 +326,20 @@ pub(crate) fn sanitize_component(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{create_installer, sanitize_component, InstallContext};
+    use super::github::{GithubAsset, GithubRelease};
+    use super::{create_installer, sanitize_component, GithubApi, InstallContext};
+    use crate::lockfile::Lockfile;
     use crate::toolset::{InstallerKind, ToolBinary, ToolDefinition};
-    use std::path::PathBuf;
+    use anyhow::{Context as AnyhowContext, Result as TestResult};
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    use sha2::{Digest as ShaDigestTrait, Sha256};
+    use std::fs;
+    use std::io::Cursor;
+    use std::path::{Path, PathBuf};
+    use std::sync::Arc;
+    use tar::{Builder, Header};
+    use tempfile::TempDir;
 
     #[test]
     fn test_sanitize_component() {
@@ -381,11 +397,91 @@ mod tests {
         }
     }
 
+    struct NoopGithubApi;
+
+    impl GithubApi for NoopGithubApi {
+        fn fetch_release(
+            &self,
+            _project: &str,
+            _tag: Option<&str>,
+        ) -> anyhow::Result<GithubRelease> {
+            unreachable!("fetch_release should not be called in this test")
+        }
+
+        fn download_asset(&self, _url: &str, _dest: &Path) -> anyhow::Result<[u8; 32]> {
+            unreachable!("download_asset should not be called in this test")
+        }
+    }
+
     fn default_context() -> InstallContext {
         InstallContext {
             cache_tools_dir: PathBuf::from("/tmp/cache/tools"),
             bin_dir: PathBuf::from("/tmp/state/bin"),
             share_dir: PathBuf::from("/tmp/state/share"),
+            github_api: Arc::new(NoopGithubApi),
+        }
+    }
+
+    #[derive(Clone)]
+    struct MockGithubApi {
+        release: GithubRelease,
+        asset_bytes: Vec<u8>,
+        digest: [u8; 32],
+    }
+
+    impl GithubApi for MockGithubApi {
+        fn fetch_release(
+            &self,
+            _project: &str,
+            _tag: Option<&str>,
+        ) -> anyhow::Result<GithubRelease> {
+            Ok(self.release.clone())
+        }
+
+        fn download_asset(&self, _url: &str, dest: &Path) -> anyhow::Result<[u8; 32]> {
+            if let Some(parent) = dest.parent() {
+                fs::create_dir_all(parent).with_context(|| {
+                    format!("Failed to create asset parent directory {:?}", parent)
+                })?;
+            }
+            fs::write(dest, &self.asset_bytes)
+                .with_context(|| format!("Failed to write mock asset to {:?}", dest))?;
+            Ok(self.digest)
+        }
+    }
+
+    fn build_tar_gz(entries: &[(&str, &[u8])]) -> TestResult<Vec<u8>> {
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        {
+            let mut builder = Builder::new(&mut encoder);
+            for (path, data) in entries {
+                let mut header = Header::new_gnu();
+                header.set_path(path)?;
+                header.set_size(data.len() as u64);
+                header.set_mode(0o755);
+                header.set_cksum();
+                builder.append_data(&mut header, *path, &mut Cursor::new(*data))?;
+            }
+            builder.finish()?;
+        }
+        Ok(encoder.finish()?)
+    }
+
+    fn mock_release(asset_name: &str, download_url: &str, size: u64) -> GithubRelease {
+        GithubRelease {
+            id: 42,
+            tag_name: "v1.0.0".to_string(),
+            name: Some("Mock Release".to_string()),
+            draft: false,
+            prerelease: false,
+            assets: vec![GithubAsset {
+                id: 99,
+                name: asset_name.to_string(),
+                content_type: Some("application/gzip".to_string()),
+                browser_download_url: download_url.to_string(),
+                size,
+                state: Some("uploaded".to_string()),
+            }],
         }
     }
 
@@ -419,5 +515,222 @@ mod tests {
         let context = default_context();
         let installer = create_installer(&definition, context).unwrap();
         assert!(installer.is_none());
+    }
+
+    #[test]
+    fn github_installer_installs_and_records_asset() -> TestResult<()> {
+        let temp = TempDir::new()?;
+        let cache_tools_dir = temp.path().join("cache/tools");
+        let bin_dir = temp.path().join("state/bin");
+        let share_dir = temp.path().join("state/share");
+        fs::create_dir_all(&cache_tools_dir)?;
+        fs::create_dir_all(&bin_dir)?;
+        fs::create_dir_all(&share_dir)?;
+
+        let asset_bytes = build_tar_gz(&[("tool", b"#!/bin/sh\necho hi\n")])?;
+        let digest_array = {
+            let mut hasher = Sha256::new();
+            hasher.update(&asset_bytes);
+            hasher.finalize().into()
+        };
+        let checksum = format!("sha256:{}", hex::encode(digest_array));
+
+        let release = mock_release(
+            "tool.tar.gz",
+            "https://example.com/tool.tar.gz",
+            asset_bytes.len() as u64,
+        );
+        let github_api = MockGithubApi {
+            release,
+            asset_bytes,
+            digest: digest_array,
+        };
+
+        let context = InstallContext {
+            cache_tools_dir: cache_tools_dir.clone(),
+            bin_dir: bin_dir.clone(),
+            share_dir: share_dir.clone(),
+            github_api: Arc::new(github_api),
+        };
+
+        let definition = ToolDefinition {
+            name: "mock".to_string(),
+            installer: InstallerKind::Github,
+            project: Some("owner/mock".to_string()),
+            version: Some("v1.0.0".to_string()),
+            url: None,
+            shell: None,
+            bin: vec![ToolBinary {
+                source: "tool".to_string(),
+                link: None,
+            }],
+            extras: Vec::new(),
+            asset_filter: vec!["tool".to_string()],
+            checksum: Some(checksum),
+            app: None,
+            team_id: None,
+            self_update: false,
+            platforms: Vec::new(),
+            hosts: Vec::new(),
+        };
+
+        let mut lockfile = Lockfile::new();
+        let dispatch = create_installer(&definition, context.clone())?
+            .expect("github installer should be created");
+        dispatch
+            .installer
+            .install(None, &mut lockfile)
+            .expect("install should succeed");
+
+        let receipts: Vec<_> = lockfile.tool_receipts().collect();
+        assert_eq!(receipts.len(), 1);
+        let receipt = receipts[0];
+        assert_eq!(receipt.name, "mock");
+        assert_eq!(receipt.binaries.len(), 1);
+        assert!(receipt.asset.is_some());
+        let asset = receipt.asset.as_ref().unwrap();
+        assert_eq!(asset.name, "tool.tar.gz");
+        assert_eq!(asset.pattern_index, Some(0));
+        assert!(bin_dir.join("tool").exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn github_installer_rejects_checksum_mismatch() -> TestResult<()> {
+        let temp = TempDir::new()?;
+        let cache_tools_dir = temp.path().join("cache/tools");
+        let bin_dir = temp.path().join("state/bin");
+        let share_dir = temp.path().join("state/share");
+        fs::create_dir_all(&cache_tools_dir)?;
+        fs::create_dir_all(&bin_dir)?;
+        fs::create_dir_all(&share_dir)?;
+
+        let asset_bytes = build_tar_gz(&[("tool", b"#!/bin/sh\necho hi\n")])?;
+        let digest_array = {
+            let mut hasher = Sha256::new();
+            hasher.update(&asset_bytes);
+            hasher.finalize().into()
+        };
+
+        let release = mock_release(
+            "tool.tar.gz",
+            "https://example.com/tool.tar.gz",
+            asset_bytes.len() as u64,
+        );
+        let github_api = MockGithubApi {
+            release,
+            asset_bytes,
+            digest: digest_array,
+        };
+
+        let context = InstallContext {
+            cache_tools_dir,
+            bin_dir,
+            share_dir,
+            github_api: Arc::new(github_api),
+        };
+
+        let definition = ToolDefinition {
+            name: "mock".to_string(),
+            installer: InstallerKind::Github,
+            project: Some("owner/mock".to_string()),
+            version: Some("v1.0.0".to_string()),
+            url: None,
+            shell: None,
+            bin: vec![ToolBinary {
+                source: "tool".to_string(),
+                link: None,
+            }],
+            extras: Vec::new(),
+            asset_filter: vec!["tool".to_string()],
+            checksum: Some(
+                "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+                    .to_string(),
+            ),
+            app: None,
+            team_id: None,
+            self_update: false,
+            platforms: Vec::new(),
+            hosts: Vec::new(),
+        };
+
+        let mut lockfile = Lockfile::new();
+        let dispatch =
+            create_installer(&definition, context)?.expect("github installer should be created");
+        let err = dispatch
+            .installer
+            .install(None, &mut lockfile)
+            .expect_err("expected checksum mismatch");
+        assert!(err.to_string().contains("Checksum mismatch"));
+        Ok(())
+    }
+
+    #[test]
+    fn github_installer_errors_when_binary_missing() -> TestResult<()> {
+        let temp = TempDir::new()?;
+        let cache_tools_dir = temp.path().join("cache/tools");
+        let bin_dir = temp.path().join("state/bin");
+        let share_dir = temp.path().join("state/share");
+        fs::create_dir_all(&cache_tools_dir)?;
+        fs::create_dir_all(&bin_dir)?;
+        fs::create_dir_all(&share_dir)?;
+
+        let asset_bytes = build_tar_gz(&[("other", b"data")])?;
+        let digest_array = {
+            let mut hasher = Sha256::new();
+            hasher.update(&asset_bytes);
+            hasher.finalize().into()
+        };
+        let checksum = format!("sha256:{}", hex::encode(digest_array));
+
+        let release = mock_release(
+            "tool.tar.gz",
+            "https://example.com/tool.tar.gz",
+            asset_bytes.len() as u64,
+        );
+        let github_api = MockGithubApi {
+            release,
+            asset_bytes,
+            digest: digest_array,
+        };
+
+        let context = InstallContext {
+            cache_tools_dir,
+            bin_dir,
+            share_dir,
+            github_api: Arc::new(github_api),
+        };
+
+        let definition = ToolDefinition {
+            name: "mock".to_string(),
+            installer: InstallerKind::Github,
+            project: Some("owner/mock".to_string()),
+            version: Some("v1.0.0".to_string()),
+            url: None,
+            shell: None,
+            bin: vec![ToolBinary {
+                source: "tool".to_string(),
+                link: None,
+            }],
+            extras: Vec::new(),
+            asset_filter: vec!["tool".to_string()],
+            checksum: Some(checksum),
+            app: None,
+            team_id: None,
+            self_update: false,
+            platforms: Vec::new(),
+            hosts: Vec::new(),
+        };
+
+        let mut lockfile = Lockfile::new();
+        let dispatch =
+            create_installer(&definition, context)?.expect("github installer should be created");
+        let err = dispatch
+            .installer
+            .install(None, &mut lockfile)
+            .expect_err("expected missing binary error");
+        assert!(err.to_string().contains("Failed to locate binary 'tool'"));
+        Ok(())
     }
 }

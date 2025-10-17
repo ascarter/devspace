@@ -9,6 +9,7 @@ use std::env;
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use tar::Archive;
 use walkdir::WalkDir;
 use xz2::read::XzDecoder;
@@ -21,6 +22,11 @@ use crate::toolset::{ExtraKind, ToolExtra};
 
 const API_ROOT: &str = "https://api.github.com";
 const DEFAULT_USER_AGENT: &str = "dws/0.1";
+
+pub trait GithubApi: Send + Sync {
+    fn fetch_release(&self, project: &str, tag: Option<&str>) -> Result<GithubRelease>;
+    fn download_asset(&self, url: &str, dest: &Path) -> Result<[u8; 32]>;
+}
 
 #[derive(Clone)]
 pub struct GithubClient {
@@ -135,6 +141,20 @@ impl GithubClient {
 
         Ok(hasher.finalize().into())
     }
+}
+
+impl GithubApi for GithubClient {
+    fn fetch_release(&self, project: &str, tag: Option<&str>) -> Result<GithubRelease> {
+        GithubClient::fetch_release(self, project, tag)
+    }
+
+    fn download_asset(&self, url: &str, dest: &Path) -> Result<[u8; 32]> {
+        GithubClient::download_asset(self, url, dest)
+    }
+}
+
+pub(crate) fn default_api() -> Result<Arc<dyn GithubApi>> {
+    Ok(Arc::new(GithubClient::from_env()?))
 }
 
 fn handle_errors(response: Response, project: &str, tag: Option<&str>) -> Result<Response> {
@@ -576,7 +596,21 @@ fn other_extra_target(share_dir: &Path, tool_slug: &str, source: &str) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
     use tempfile::TempDir;
+
+    #[derive(Clone)]
+    struct DummyGithubApi;
+
+    impl GithubApi for DummyGithubApi {
+        fn fetch_release(&self, _project: &str, _tag: Option<&str>) -> Result<GithubRelease> {
+            unreachable!("fetch_release should not be called in path resolution tests")
+        }
+
+        fn download_asset(&self, _url: &str, _dest: &Path) -> Result<[u8; 32]> {
+            unreachable!("download_asset should not be called in path resolution tests")
+        }
+    }
 
     #[test]
     fn endpoint_latest() {
@@ -713,6 +747,7 @@ mod tests {
             cache_tools_dir: temp.path().join("cache"),
             bin_dir: temp.path().join("bin"),
             share_dir: temp.path().join("share"),
+            github_api: Arc::new(DummyGithubApi),
         };
         fs::create_dir_all(&context.share_dir).unwrap();
 
@@ -738,6 +773,7 @@ mod tests {
             cache_tools_dir: temp.path().join("cache"),
             bin_dir: temp.path().join("bin"),
             share_dir: temp.path().join("share"),
+            github_api: Arc::new(DummyGithubApi),
         };
         fs::create_dir_all(&context.share_dir).unwrap();
 
@@ -765,6 +801,7 @@ mod tests {
             cache_tools_dir: temp.path().join("cache"),
             bin_dir: temp.path().join("bin"),
             share_dir: temp.path().join("share"),
+            github_api: Arc::new(DummyGithubApi),
         };
         fs::create_dir_all(&context.share_dir).unwrap();
 
