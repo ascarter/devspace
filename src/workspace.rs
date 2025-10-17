@@ -113,6 +113,8 @@ pub struct EnvironmentExport {
 /// The workspace is rooted at $XDG_CONFIG_HOME/dws and represents your dotfiles.
 #[derive(Debug)]
 pub struct Workspace {
+    /// XDG config home root
+    config_home: PathBuf,
     /// Workspace root: $XDG_CONFIG_HOME/dws (version controlled)
     workspace_dir: PathBuf,
     /// Profiles directory: $XDG_CONFIG_HOME/dws/profiles
@@ -136,7 +138,8 @@ impl Workspace {
     /// - Workspace: $XDG_CONFIG_HOME/dws (default: ~/.config/dws)
     /// - State: $XDG_STATE_HOME/dws (default: ~/.local/state/dws)
     pub fn new() -> Result<Self> {
-        let workspace_dir = Self::get_workspace_dir()?;
+        let config_home = Self::get_config_home()?;
+        let workspace_dir = config_home.join("dws");
         let profiles_dir = workspace_dir.join("profiles");
         let state_dir = Self::get_state_dir()?;
         let cache_dir = Self::get_cache_dir()?;
@@ -147,6 +150,7 @@ impl Workspace {
         let active_profile = Profile::new(active_name.clone(), profiles_dir.join(&active_name));
 
         Ok(Self {
+            config_home,
             workspace_dir,
             profiles_dir,
             state_dir,
@@ -157,18 +161,16 @@ impl Workspace {
         })
     }
 
-    /// Get the workspace directory (XDG_CONFIG_HOME/dws)
-    fn get_workspace_dir() -> Result<PathBuf> {
-        let base = env::var("XDG_CONFIG_HOME")
+    /// Get the XDG config home directory
+    fn get_config_home() -> Result<PathBuf> {
+        Ok(env::var("XDG_CONFIG_HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|_| {
                 directories::BaseDirs::new()
                     .expect("Failed to get home directory")
                     .home_dir()
                     .join(".config")
-            });
-
-        Ok(base.join("dws"))
+            }))
     }
 
     /// Get the cache directory (XDG_CACHE_HOME/dws)
@@ -650,14 +652,7 @@ impl Workspace {
         let config_dir = self.path(WorkspacePath::Config);
 
         // Target is $XDG_CONFIG_HOME (default: ~/.config)
-        let target_dir = env::var("XDG_CONFIG_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| {
-                directories::BaseDirs::new()
-                    .expect("Failed to get home directory")
-                    .home_dir()
-                    .join(".config")
-            });
+        let target_dir = self.config_home.clone();
 
         Ok(Dotfiles::new(config_dir, target_dir))
     }
