@@ -1259,6 +1259,34 @@ impl Workspace {
                     })?;
                 }
             }
+
+            if let Some(asset) = &receipt.asset {
+                if let Some(parent) = asset.archive_path.parent() {
+                    let mut current = Some(parent);
+                    while let Some(dir) = current {
+                        if !dir.starts_with(&tools_dir) {
+                            break;
+                        }
+                        in_use.insert(dir.to_path_buf());
+                        if dir == tools_dir {
+                            break;
+                        }
+                        current = dir.parent();
+                    }
+                }
+
+                let mut current = Some(asset.extract_dir.as_path());
+                while let Some(dir) = current {
+                    if !dir.starts_with(&tools_dir) {
+                        break;
+                    }
+                    in_use.insert(dir.to_path_buf());
+                    if dir == tools_dir {
+                        break;
+                    }
+                    current = dir.parent();
+                }
+            }
         }
         Ok(())
     }
@@ -1564,6 +1592,7 @@ project = "BurntSushi/ripgrep"
                 target: target.clone(),
             }],
             Vec::new(),
+            None,
         );
 
         // Inline removal of tool binary symlinks using lockfile receipts
@@ -2050,6 +2079,7 @@ version = "14.0.0"
                 target: valid_target.clone(),
             }],
             Vec::new(),
+            None,
         );
 
         // Prune unused bin symlinks

@@ -43,6 +43,26 @@ pub struct BinaryLink {
     pub target: PathBuf,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AssetRecord {
+    /// Release asset name
+    pub name: String,
+    /// Download URL used when fetching the asset
+    pub url: String,
+    /// SHA256 checksum recorded for the asset
+    pub checksum: String,
+    /// Local path to the downloaded archive
+    pub archive_path: PathBuf,
+    /// Directory where the archive was extracted
+    pub extract_dir: PathBuf,
+    /// Index of the matched asset filter pattern
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pattern_index: Option<usize>,
+    /// Pattern string that produced the match
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pattern: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolReceipt {
     /// Tool name
@@ -60,6 +80,8 @@ pub struct ToolReceipt {
     pub binaries: Vec<BinaryLink>,
     #[serde(default)]
     pub extras: Vec<ExtraLink>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asset: Option<AssetRecord>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -128,6 +150,7 @@ impl Lockfile {
         installed_at: String,
         binaries: Vec<BinaryLink>,
         extras: Vec<ExtraLink>,
+        asset: Option<AssetRecord>,
     ) {
         self.tool_receipts.push(ToolReceipt {
             name,
@@ -137,6 +160,7 @@ impl Lockfile {
             installed_at,
             binaries,
             extras,
+            asset,
         });
     }
 
@@ -153,6 +177,7 @@ impl Lockfile {
         installer_kind: &str,
         binaries: Vec<BinaryLink>,
         extras: Vec<ExtraLink>,
+        asset: Option<AssetRecord>,
     ) {
         let installed_at = chrono::Utc::now().to_rfc3339();
         self.add_tool_receipt(
@@ -163,6 +188,7 @@ impl Lockfile {
             installed_at,
             binaries,
             extras,
+            asset,
         );
     }
 
@@ -221,6 +247,7 @@ mod tests {
                 target: PathBuf::from("/bin/rg"),
             }],
             Vec::new(),
+            None,
         );
 
         lockfile.save(&lockfile_path).unwrap();
@@ -250,6 +277,7 @@ mod tests {
                 target: PathBuf::from("/bin/tool"),
             }],
             Vec::new(),
+            None,
         );
 
         assert_eq!(lockfile.config_symlinks.len(), 1);
@@ -280,6 +308,7 @@ mod tests {
                 target: PathBuf::from("/bin/rg"),
             }],
             Vec::new(),
+            None,
         );
         lockfile.add_tool_receipt(
             "fd".to_string(),
@@ -293,6 +322,7 @@ mod tests {
                 target: PathBuf::from("/bin/fd"),
             }],
             Vec::new(),
+            None,
         );
 
         // Test config symlinks iterator
@@ -332,6 +362,7 @@ mod tests {
                 target: PathBuf::from("/bin/rg"),
             }],
             Vec::new(),
+            None,
         );
         lockfile.add_tool_receipt(
             "fd".to_string(),
@@ -345,6 +376,7 @@ mod tests {
                 target: PathBuf::from("/bin/fd"),
             }],
             Vec::new(),
+            None,
         );
 
         lockfile.retain_tool_receipts(|entry| entry.name != "fd");
@@ -370,6 +402,15 @@ mod tests {
                 target: PathBuf::from("/bin/exa"),
             }],
             Vec::new(),
+            Some(AssetRecord {
+                name: "exa.tar.gz".to_string(),
+                url: "https://example.com/exa.tar.gz".to_string(),
+                checksum: "deadbeef".to_string(),
+                archive_path: PathBuf::from("/cache/exa/exa.tar.gz"),
+                extract_dir: PathBuf::from("/cache/exa/contents"),
+                pattern_index: Some(0),
+                pattern: Some("exa".to_string()),
+            }),
         );
 
         let receipts: Vec<_> = lockfile.tool_receipts().collect();
@@ -380,5 +421,8 @@ mod tests {
         assert_eq!(receipt.resolved_version, "v1.0.0");
         assert_eq!(receipt.installer_kind, "github");
         assert!(!receipt.installed_at.is_empty());
+        let asset = receipt.asset.as_ref().expect("asset metadata recorded");
+        assert_eq!(asset.name, "exa.tar.gz");
+        assert_eq!(asset.pattern_index, Some(0));
     }
 }

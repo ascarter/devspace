@@ -1,4 +1,4 @@
-use crate::lockfile::{BinaryLink, ExtraLink, Lockfile};
+use crate::lockfile::{AssetRecord, BinaryLink, ExtraLink, Lockfile};
 use crate::toolset::{InstallerKind, ToolBinary, ToolDefinition, ToolExtra};
 use anyhow::{bail, Context, Result};
 use std::fs;
@@ -246,6 +246,15 @@ impl ToolInstaller for GithubInstaller {
             "github",
             binary_links,
             extra_links,
+            Some(AssetRecord {
+                name: selected.asset.name.clone(),
+                url: selected.asset.browser_download_url.clone(),
+                checksum: github::format_digest(&digest),
+                archive_path: asset_path,
+                extract_dir,
+                pattern_index: Some(selected.pattern_index),
+                pattern: Some(selected.pattern.to_string()),
+            }),
         );
         Ok(())
     }
