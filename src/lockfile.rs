@@ -14,9 +14,9 @@ pub struct Lockfile {
     /// Config file symlinks (dotfiles)
     #[serde(default)]
     pub config_symlinks: Vec<SymlinkEntry>,
-    /// Tool binary symlinks
+    /// Tool installation receipts (schema v2 placeholder)
     #[serde(default)]
-    pub tool_symlinks: Vec<ToolEntry>,
+    pub tool_receipts: Vec<ToolReceipt>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,15 +34,30 @@ pub struct SymlinkEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolEntry {
+pub struct BinaryLink {
+    /// Symlink name exposed in the workspace bin directory
+    pub link: String,
+    /// Absolute source path of the binary in the cache/tools directory
+    pub source: PathBuf,
+    /// Absolute target path of the symlink in the workspace bin directory
+    pub target: PathBuf,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolReceipt {
     /// Tool name
     pub name: String,
-    /// Version installed
-    pub version: String,
-    /// Source path (in cache)
-    pub source: PathBuf,
-    /// Target path (in state/bin)
-    pub target: PathBuf,
+    /// Version string from manifest (may be "latest")
+    pub manifest_version: String,
+    /// Resolved concrete version/tag
+    pub resolved_version: String,
+    /// Installer backend kind (github | gitlab | script)
+    pub installer_kind: String,
+    /// When this tool/version was installed
+    pub installed_at: String,
+    /// Linked binaries for this tool
+    #[serde(default)]
+    pub binaries: Vec<BinaryLink>,
 }
 
 impl Default for Lockfile {
@@ -56,10 +71,10 @@ impl Lockfile {
     pub fn new() -> Self {
         let now = chrono::Utc::now().to_rfc3339();
         Self {
-            version: 1,
+            version: 2,
             metadata: Metadata { installed_at: now },
             config_symlinks: Vec::new(),
-            tool_symlinks: Vec::new(),
+            tool_receipts: Vec::new(),
         }
     }
 
@@ -93,20 +108,48 @@ impl Lockfile {
         self.config_symlinks.push(SymlinkEntry { source, target });
     }
 
-    /// Add a tool symlink entry
-    pub fn add_tool_symlink(
+    /// Add a tool receipt (skeleton placeholder for Phase 0)
+    pub fn add_tool_receipt(
         &mut self,
         name: String,
-        version: String,
-        source: PathBuf,
-        target: PathBuf,
+        manifest_version: String,
+        resolved_version: String,
+        installer_kind: String,
+        installed_at: String,
+        binaries: Vec<BinaryLink>,
     ) {
-        self.tool_symlinks.push(ToolEntry {
+        self.tool_receipts.push(ToolReceipt {
             name,
-            version,
-            source,
-            target,
+            manifest_version,
+            resolved_version,
+            installer_kind,
+            installed_at,
+            binaries,
         });
+    }
+
+    /// Convenience helper to record a tool installation event, generating the timestamp automatically.
+    ///
+    /// This should be preferred over calling `add_tool_receipt` directly in installer backends.
+    /// `manifest_version` is the version string as specified in the manifest (may be "latest").
+    /// `resolved_version` is the concrete tag/version determined during installation.
+    pub fn record_tool_install(
+        &mut self,
+        name: &str,
+        manifest_version: &str,
+        resolved_version: &str,
+        installer_kind: &str,
+        binaries: Vec<BinaryLink>,
+    ) {
+        let installed_at = chrono::Utc::now().to_rfc3339();
+        self.add_tool_receipt(
+            name.to_string(),
+            manifest_version.to_string(),
+            resolved_version.to_string(),
+            installer_kind.to_string(),
+            installed_at,
+            binaries,
+        );
     }
 
     /// Iterate over all config symlink entries
@@ -114,17 +157,17 @@ impl Lockfile {
         self.config_symlinks.iter()
     }
 
-    /// Iterate over all tool symlink entries
-    pub fn tool_symlinks(&self) -> impl Iterator<Item = &ToolEntry> {
-        self.tool_symlinks.iter()
+    /// Iterate over all tool receipt entries
+    pub fn tool_receipts(&self) -> impl Iterator<Item = &ToolReceipt> {
+        self.tool_receipts.iter()
     }
 
-    /// Retain only tool symlink entries that satisfy the provided predicate.
-    pub fn retain_tool_symlinks<F>(&mut self, mut predicate: F)
+    /// Retain only tool receipt entries that satisfy the provided predicate.
+    pub fn retain_tool_receipts<F>(&mut self, mut predicate: F)
     where
-        F: FnMut(&ToolEntry) -> bool,
+        F: FnMut(&ToolReceipt) -> bool,
     {
-        self.tool_symlinks.retain(|entry| predicate(entry));
+        self.tool_receipts.retain(|entry| predicate(entry));
     }
 }
 
@@ -136,10 +179,10 @@ mod tests {
     #[test]
     fn test_lockfile_new() {
         let lockfile = Lockfile::new();
-        assert_eq!(lockfile.version, 1);
+        assert_eq!(lockfile.version, 2);
         assert!(!lockfile.metadata.installed_at.is_empty());
         assert!(lockfile.config_symlinks.is_empty());
-        assert!(lockfile.tool_symlinks.is_empty());
+        assert!(lockfile.tool_receipts.is_empty());
     }
 
     #[test]
@@ -152,11 +195,17 @@ mod tests {
             PathBuf::from("/source/.zshrc"),
             PathBuf::from("/target/.zshrc"),
         );
-        lockfile.add_tool_symlink(
+        lockfile.add_tool_receipt(
             "rg".to_string(),
             "14.0.0".to_string(),
-            PathBuf::from("/cache/rg"),
-            PathBuf::from("/bin/rg"),
+            "14.0.0".to_string(),
+            "github".to_string(),
+            chrono::Utc::now().to_rfc3339(),
+            vec![BinaryLink {
+                link: "rg".to_string(),
+                source: PathBuf::from("/cache/rg"),
+                target: PathBuf::from("/bin/rg"),
+            }],
         );
 
         lockfile.save(&lockfile_path).unwrap();
@@ -164,9 +213,9 @@ mod tests {
 
         let loaded = Lockfile::load(&lockfile_path).unwrap();
         assert_eq!(loaded.config_symlinks.len(), 1);
-        assert_eq!(loaded.tool_symlinks.len(), 1);
-        assert_eq!(loaded.tool_symlinks[0].name, "rg");
-        assert_eq!(loaded.tool_symlinks[0].version, "14.0.0");
+        assert_eq!(loaded.tool_receipts.len(), 1);
+        assert_eq!(loaded.tool_receipts[0].name, "rg");
+        assert_eq!(loaded.tool_receipts[0].resolved_version, "14.0.0");
     }
 
     #[test]
@@ -174,15 +223,21 @@ mod tests {
         let mut lockfile = Lockfile::new();
 
         lockfile.add_config_symlink(PathBuf::from("/a"), PathBuf::from("/b"));
-        lockfile.add_tool_symlink(
+        lockfile.add_tool_receipt(
             "tool".to_string(),
             "1.0".to_string(),
-            PathBuf::from("/c"),
-            PathBuf::from("/d"),
+            "1.0".to_string(),
+            "github".to_string(),
+            chrono::Utc::now().to_rfc3339(),
+            vec![BinaryLink {
+                link: "tool".to_string(),
+                source: PathBuf::from("/c"),
+                target: PathBuf::from("/bin/tool"),
+            }],
         );
 
         assert_eq!(lockfile.config_symlinks.len(), 1);
-        assert_eq!(lockfile.tool_symlinks.len(), 1);
+        assert_eq!(lockfile.tool_receipts.len(), 1);
     }
 
     #[test]
@@ -197,17 +252,29 @@ mod tests {
             PathBuf::from("/config/nvim/init.lua"),
             PathBuf::from("/home/.config/nvim/init.lua"),
         );
-        lockfile.add_tool_symlink(
+        lockfile.add_tool_receipt(
             "rg".to_string(),
             "14.0.0".to_string(),
-            PathBuf::from("/cache/rg"),
-            PathBuf::from("/bin/rg"),
+            "14.0.0".to_string(),
+            "github".to_string(),
+            chrono::Utc::now().to_rfc3339(),
+            vec![BinaryLink {
+                link: "rg".to_string(),
+                source: PathBuf::from("/cache/rg"),
+                target: PathBuf::from("/bin/rg"),
+            }],
         );
-        lockfile.add_tool_symlink(
+        lockfile.add_tool_receipt(
             "fd".to_string(),
             "9.0.0".to_string(),
-            PathBuf::from("/cache/fd"),
-            PathBuf::from("/bin/fd"),
+            "9.0.0".to_string(),
+            "github".to_string(),
+            chrono::Utc::now().to_rfc3339(),
+            vec![BinaryLink {
+                link: "fd".to_string(),
+                source: PathBuf::from("/cache/fd"),
+                target: PathBuf::from("/bin/fd"),
+            }],
         );
 
         // Test config symlinks iterator
@@ -223,35 +290,74 @@ mod tests {
         );
 
         // Test tool symlinks iterator
-        let tool_entries: Vec<_> = lockfile.tool_symlinks().collect();
-        assert_eq!(tool_entries.len(), 2);
-        assert_eq!(tool_entries[0].name, "rg");
-        assert_eq!(tool_entries[0].version, "14.0.0");
-        assert_eq!(tool_entries[1].name, "fd");
-        assert_eq!(tool_entries[1].version, "9.0.0");
+        let receipts: Vec<_> = lockfile.tool_receipts().collect();
+        assert_eq!(receipts.len(), 2);
+        assert_eq!(receipts[0].name, "rg");
+        assert_eq!(receipts[0].resolved_version, "14.0.0");
+        assert_eq!(receipts[1].name, "fd");
+        assert_eq!(receipts[1].resolved_version, "9.0.0");
     }
 
     #[test]
     fn test_lockfile_retain_tool_symlinks() {
         let mut lockfile = Lockfile::new();
 
-        lockfile.add_tool_symlink(
+        lockfile.add_tool_receipt(
             "rg".to_string(),
             "14.0.0".to_string(),
-            PathBuf::from("/cache/rg"),
-            PathBuf::from("/bin/rg"),
+            "14.0.0".to_string(),
+            "github".to_string(),
+            chrono::Utc::now().to_rfc3339(),
+            vec![BinaryLink {
+                link: "rg".to_string(),
+                source: PathBuf::from("/cache/rg"),
+                target: PathBuf::from("/bin/rg"),
+            }],
         );
-        lockfile.add_tool_symlink(
+        lockfile.add_tool_receipt(
             "fd".to_string(),
             "9.0.0".to_string(),
-            PathBuf::from("/cache/fd"),
-            PathBuf::from("/bin/fd"),
+            "9.0.0".to_string(),
+            "github".to_string(),
+            chrono::Utc::now().to_rfc3339(),
+            vec![BinaryLink {
+                link: "fd".to_string(),
+                source: PathBuf::from("/cache/fd"),
+                target: PathBuf::from("/bin/fd"),
+            }],
         );
 
-        lockfile.retain_tool_symlinks(|entry| entry.name != "fd");
+        lockfile.retain_tool_receipts(|entry| entry.name != "fd");
 
-        let tool_entries: Vec<_> = lockfile.tool_symlinks().collect();
-        assert_eq!(tool_entries.len(), 1);
-        assert_eq!(tool_entries[0].name, "rg");
+        let receipts: Vec<_> = lockfile.tool_receipts().collect();
+        assert_eq!(receipts.len(), 1);
+        assert_eq!(receipts[0].name, "rg");
+    }
+
+    #[test]
+    fn test_record_tool_install() {
+        let mut lockfile = Lockfile::new();
+        assert_eq!(lockfile.tool_receipts().count(), 0);
+
+        lockfile.record_tool_install(
+            "exa",
+            "latest",
+            "v1.0.0",
+            "github",
+            vec![BinaryLink {
+                link: "exa".to_string(),
+                source: PathBuf::from("/cache/exa"),
+                target: PathBuf::from("/bin/exa"),
+            }],
+        );
+
+        let receipts: Vec<_> = lockfile.tool_receipts().collect();
+        assert_eq!(receipts.len(), 1);
+        let receipt = receipts[0];
+        assert_eq!(receipt.name, "exa");
+        assert_eq!(receipt.manifest_version, "latest");
+        assert_eq!(receipt.resolved_version, "v1.0.0");
+        assert_eq!(receipt.installer_kind, "github");
+        assert!(!receipt.installed_at.is_empty());
     }
 }

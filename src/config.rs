@@ -96,7 +96,7 @@ mod tests {
 active_profile = "work"
 
 [tools.ripgrep]
-installer = "ubi"
+installer = "curl"
 
 [extras]
 value = "keep"

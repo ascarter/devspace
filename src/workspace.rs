@@ -15,7 +15,8 @@ use crate::config::{default_profile_name, Config};
 use crate::dotfiles::Dotfiles;
 use crate::environment::{Environment, Shell};
 use crate::installers::{self, InstallContext, ToolInstaller};
-use crate::lockfile::{Lockfile, ToolEntry as LockfileToolEntry};
+// ToolEntry removed in schema v2; legacy alias dropped
+use crate::lockfile::Lockfile;
 use crate::profile::Profile;
 use crate::toolset::{ToolDefinition, ToolSet};
 use crate::ui::{self, Progress};
@@ -298,7 +299,19 @@ impl Workspace {
         let lockfile_path = self.path(WorkspacePath::Lockfile);
         if lockfile_path.exists() {
             let lockfile = Lockfile::load(&lockfile_path)?;
-            self.remove_tracked_symlinks(&lockfile)?;
+            // Inline removal of previous symlinks (config + tool binaries)
+            for entry in lockfile.config_symlinks() {
+                if entry.target.exists() || entry.target.symlink_metadata().is_ok() {
+                    let _ = fs::remove_file(&entry.target);
+                }
+            }
+            for receipt in lockfile.tool_receipts() {
+                for bin in &receipt.binaries {
+                    if bin.target.exists() || bin.target.symlink_metadata().is_ok() {
+                        let _ = fs::remove_file(&bin.target);
+                    }
+                }
+            }
         }
 
         self.set_active_profile(profile_name.to_string())?;
@@ -800,9 +813,20 @@ impl Workspace {
         // Load or create lockfile
         let lockfile_path = self.path(WorkspacePath::Lockfile);
         let mut lockfile = if lockfile_path.exists() {
-            // Cleanup existing installation first
+            // Cleanup existing installation first (remove previous symlinks)
             let old_lockfile = Lockfile::load(&lockfile_path)?;
-            self.remove_tracked_symlinks(&old_lockfile)?;
+            for entry in old_lockfile.config_symlinks() {
+                if entry.target.exists() || entry.target.symlink_metadata().is_ok() {
+                    let _ = fs::remove_file(&entry.target);
+                }
+            }
+            for receipt in old_lockfile.tool_receipts() {
+                for bin in &receipt.binaries {
+                    if bin.target.exists() || bin.target.symlink_metadata().is_ok() {
+                        let _ = fs::remove_file(&bin.target);
+                    }
+                }
+            }
             Lockfile::new()
         } else {
             Lockfile::new()
@@ -925,36 +949,42 @@ impl Workspace {
             Lockfile::new()
         };
 
-        let mut current_entries: HashMap<String, Vec<LockfileToolEntry>> = HashMap::new();
-        for entry in lockfile.tool_symlinks() {
-            current_entries
-                .entry(entry.name.clone())
+        // Collect existing installed versions per tool name (for future diffing/reporting)
+        let mut existing_versions: HashMap<String, Vec<String>> = HashMap::new();
+        for receipt in lockfile.tool_receipts() {
+            existing_versions
+                .entry(receipt.name.clone())
                 .or_default()
-                .push(entry.clone());
+                .push(receipt.resolved_version.clone());
         }
 
         let mut filtered_tasks = Vec::new();
         for task in tasks {
             if let Some(resolved) = &task.resolved_version {
-                if let Some(entries) = current_entries.get(&task.name) {
-                    let version_matches = entries.iter().all(|entry| entry.version == *resolved);
-                    let missing_paths = entries.iter().any(|entry| {
-                        !entry.source.exists()
-                            || !entry.target.exists()
-                            || entry
-                                .target
-                                .symlink_metadata()
-                                .map(|meta| !meta.file_type().is_symlink())
-                                .unwrap_or(true)
-                    });
+                if let Some(versions) = existing_versions.get(&task.name) {
+                    let all_match = versions.iter().all(|v| v == resolved);
+                    // Determine if any recorded binary symlink paths are missing or invalid
+                    let missing_paths = lockfile
+                        .tool_receipts()
+                        .filter(|r| r.name == task.name)
+                        .flat_map(|r| r.binaries.iter())
+                        .any(|bin| {
+                            !bin.source.exists()
+                                || !bin.target.exists()
+                                || bin
+                                    .target
+                                    .symlink_metadata()
+                                    .map(|meta| !meta.file_type().is_symlink())
+                                    .unwrap_or(true)
+                        });
 
-                    if version_matches && !missing_paths {
+                    if all_match && !missing_paths {
                         ui::info(format!(
                             "'{}' is already at version '{}'; skipping.",
                             task.name, resolved
                         ));
                         continue;
-                    } else if version_matches && missing_paths {
+                    } else if all_match && missing_paths {
                         ui::warn(format!(
                             "'{}' is already at version '{}' but required files are missing; reinstalling.",
                             task.name, resolved
@@ -976,13 +1006,21 @@ impl Workspace {
             .collect();
 
         for name in &names_to_update {
-            let prior_entries: Vec<LockfileToolEntry> = lockfile
-                .tool_symlinks()
-                .filter(|entry| entry.name == *name)
+            // Remove binary symlinks for this tool before re-installing
+            let receipts_for_tool: Vec<_> = lockfile
+                .tool_receipts()
+                .filter(|r| r.name == *name)
                 .cloned()
                 .collect();
-            self.remove_tool_symlink_entries(&prior_entries)?;
-            lockfile.retain_tool_symlinks(|entry| entry.name != *name);
+            for receipt in receipts_for_tool {
+                for bin in receipt.binaries {
+                    if bin.target.exists() || bin.target.symlink_metadata().is_ok() {
+                        let _ = fs::remove_file(&bin.target);
+                    }
+                }
+            }
+            // Drop prior receipts
+            lockfile.retain_tool_receipts(|entry| entry.name != *name);
         }
 
         let update_start = Instant::now();
@@ -1117,17 +1155,6 @@ impl Workspace {
         Ok(())
     }
 
-    fn remove_tool_symlink_entries(&self, entries: &[LockfileToolEntry]) -> Result<()> {
-        for entry in entries {
-            if entry.target.exists() || entry.target.symlink_metadata().is_ok() {
-                fs::remove_file(&entry.target)
-                    .with_context(|| format!("Failed to remove tool symlink {:?}", entry.target))?;
-            }
-        }
-
-        Ok(())
-    }
-
     /// Remove all symlinks tracked in the lockfile
     fn remove_tracked_symlinks(&self, lockfile: &Lockfile) -> Result<()> {
         // Remove config symlinks
@@ -1139,11 +1166,14 @@ impl Workspace {
             }
         }
 
-        // Remove tool symlinks
-        for entry in lockfile.tool_symlinks() {
-            if entry.target.exists() || entry.target.symlink_metadata().is_ok() {
-                fs::remove_file(&entry.target)
-                    .with_context(|| format!("Failed to remove tool symlink {:?}", entry.target))?;
+        // Remove tool binary symlinks
+        for receipt in lockfile.tool_receipts() {
+            for bin in &receipt.binaries {
+                if bin.target.exists() || bin.target.symlink_metadata().is_ok() {
+                    fs::remove_file(&bin.target).with_context(|| {
+                        format!("Failed to remove tool binary symlink {:?}", bin.target)
+                    })?;
+                }
             }
         }
 
@@ -1162,57 +1192,58 @@ impl Workspace {
         }
 
         let mut in_use: HashSet<PathBuf> = HashSet::new();
-        for entry in lockfile.tool_symlinks() {
-            let mut current = entry.source.parent();
-            while let Some(dir) = current {
-                if !dir.starts_with(&tools_dir) {
-                    break;
+        for receipt in lockfile.tool_receipts() {
+            for bin in &receipt.binaries {
+                let mut current = bin.source.parent();
+                while let Some(dir) = current {
+                    if !dir.starts_with(&tools_dir) {
+                        break;
+                    }
+
+                    in_use.insert(dir.to_path_buf());
+
+                    if dir == tools_dir {
+                        break;
+                    }
+
+                    current = dir.parent();
                 }
-
-                in_use.insert(dir.to_path_buf());
-
-                if dir == tools_dir {
-                    break;
-                }
-
-                current = dir.parent();
-            }
-        }
-
-        for tool_entry in fs::read_dir(&tools_dir)
-            .with_context(|| format!("Failed to read cache directory {:?}", tools_dir))?
-        {
-            let tool_entry = tool_entry?;
-            let tool_path = tool_entry.path();
-            if !tool_path.is_dir() {
-                continue;
             }
 
-            for version_entry in fs::read_dir(&tool_path)? {
-                let version_entry = version_entry?;
-                let version_path = version_entry.path();
-                if !version_path.is_dir() {
+            for tool_entry in fs::read_dir(&tools_dir)
+                .with_context(|| format!("Failed to read cache directory {:?}", tools_dir))?
+            {
+                let tool_entry = tool_entry?;
+                let tool_path = tool_entry.path();
+                if !tool_path.is_dir() {
                     continue;
                 }
 
-                if !in_use.contains(&version_path) {
-                    fs::remove_dir_all(&version_path).with_context(|| {
-                        format!("Failed to remove cached tool at {:?}", version_path)
+                for version_entry in fs::read_dir(&tool_path)? {
+                    let version_entry = version_entry?;
+                    let version_path = version_entry.path();
+                    if !version_path.is_dir() {
+                        continue;
+                    }
+
+                    if !in_use.contains(&version_path) {
+                        fs::remove_dir_all(&version_path).with_context(|| {
+                            format!("Failed to remove cached tool at {:?}", version_path)
+                        })?;
+                    }
+                }
+
+                if !tool_path.exists() {
+                    continue;
+                }
+
+                if tool_path.read_dir()?.next().is_none() {
+                    fs::remove_dir(&tool_path).with_context(|| {
+                        format!("Failed to remove empty cache directory {:?}", tool_path)
                     })?;
                 }
             }
-
-            if !tool_path.exists() {
-                continue;
-            }
-
-            if tool_path.read_dir()?.next().is_none() {
-                fs::remove_dir(&tool_path).with_context(|| {
-                    format!("Failed to remove empty cache directory {:?}", tool_path)
-                })?;
-            }
         }
-
         Ok(())
     }
 
@@ -1224,10 +1255,12 @@ impl Workspace {
             return Ok(());
         }
 
-        let valid: HashSet<PathBuf> = lockfile
-            .tool_symlinks()
-            .map(|entry| entry.target.clone())
-            .collect();
+        let mut valid: HashSet<PathBuf> = HashSet::new();
+        for receipt in lockfile.tool_receipts() {
+            for bin in &receipt.binaries {
+                valid.insert(bin.target.clone());
+            }
+        }
 
         for entry in fs::read_dir(&bin_dir)
             .with_context(|| format!("Failed to read bin directory {:?}", bin_dir))?
@@ -1365,7 +1398,8 @@ fn determine_reset_target(repo: &Repository) -> Result<Object<'_>> {
 mod tests {
     use super::*;
     use crate::config::default_profile_name;
-    use crate::lockfile::ToolEntry as LockfileToolEntry;
+
+    use crate::lockfile::BinaryLink;
     use crate::toolset::InstallerKind;
     use rstest::rstest;
     use serial_test::serial;
@@ -1447,7 +1481,7 @@ mod tests {
             &profile_config,
             r#"
 [tools.ripgrep]
-installer = "ubi"
+installer = "curl"
 project = "BurntSushi/ripgrep"
 "#,
         )
@@ -1457,7 +1491,7 @@ project = "BurntSushi/ripgrep"
         assert_eq!(tools.len(), 1);
         let (name, entry) = tools.iter().next().unwrap();
         assert_eq!(name, "ripgrep");
-        assert_eq!(entry.definition.installer, InstallerKind::Ubi);
+        assert_eq!(entry.definition.installer, InstallerKind::Curl);
     }
 
     #[test]
@@ -1491,23 +1525,38 @@ project = "BurntSushi/ripgrep"
 
     #[test]
     #[serial]
-    fn test_remove_tool_symlink_entries() {
+    fn test_remove_tool_symlinks_via_lockfile() {
         let _temp = setup_test_env();
         let workspace = Workspace::new().unwrap();
 
         let bin_dir = workspace.path(WorkspacePath::Bin);
         fs::create_dir_all(&bin_dir).unwrap();
         let target = bin_dir.join("rg");
+        // Create a dummy symlink/file to remove
         fs::write(&target, "dummy").unwrap();
 
-        let entries = vec![LockfileToolEntry {
-            name: "rg".to_string(),
-            version: "14.0.0".to_string(),
-            source: PathBuf::from("/cache/tools/rg/14.0.0/rg"),
-            target: target.clone(),
-        }];
+        let mut lockfile = Lockfile::new();
+        lockfile.add_tool_receipt(
+            "rg".to_string(),
+            "14.0.0".to_string(),
+            "14.0.0".to_string(),
+            "github".to_string(),
+            chrono::Utc::now().to_rfc3339(),
+            vec![crate::lockfile::BinaryLink {
+                link: "rg".to_string(),
+                source: PathBuf::from("/cache/tools/rg/14.0.0/rg"),
+                target: target.clone(),
+            }],
+        );
 
-        workspace.remove_tool_symlink_entries(&entries).unwrap();
+        // Inline removal of tool binary symlinks using lockfile receipts
+        for receipt in lockfile.tool_receipts() {
+            for bin in &receipt.binaries {
+                if bin.target.exists() || bin.target.symlink_metadata().is_ok() {
+                    let _ = fs::remove_file(&bin.target);
+                }
+            }
+        }
         assert!(!target.exists());
     }
 
@@ -1525,7 +1574,7 @@ project = "BurntSushi/ripgrep"
             &profile_config,
             r#"
 [tools.ripgrep]
-installer = "ubi"
+installer = "curl"
 project = "BurntSushi/ripgrep"
 version = "14.0.0"
 "#,
@@ -1931,6 +1980,81 @@ version = "14.0.0"
         assert!(export.defaulted);
         assert_eq!(export.shell, Shell::Zsh);
         assert!(export.script.contains("export PATH"));
+        drop(temp);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_prune_unused_bin_and_cache() {
+        use std::fs;
+        use std::os::unix::fs::symlink;
+
+        let temp = setup_test_env();
+        let workspace = Workspace::new().unwrap();
+
+        // Ensure bin and cache/tool directories exist
+        let bin_dir = workspace.path(WorkspacePath::Bin);
+        fs::create_dir_all(&bin_dir).unwrap();
+
+        let cache_dir = workspace.path(WorkspacePath::Cache);
+        let tools_root = cache_dir.join("tools");
+        let tool_version_dir = tools_root.join("exa").join("v1.0.0");
+        fs::create_dir_all(&tool_version_dir).unwrap();
+
+        // Create a source binary file inside the cached version directory
+        let source_bin = tool_version_dir.join("exa");
+        fs::write(&source_bin, "#!/bin/sh\necho exa").unwrap();
+
+        // Valid symlink target
+        let valid_target = bin_dir.join("exa");
+        symlink(&source_bin, &valid_target).unwrap();
+
+        // Create a stale symlink not referenced by any receipt
+        let stale_source = tool_version_dir.join("stale");
+        fs::write(&stale_source, "#!/bin/sh\necho stale").unwrap();
+        let stale_target = bin_dir.join("stale");
+        symlink(&stale_source, &stale_target).unwrap();
+
+        // Build a lockfile receipt referencing only the valid binary
+        let mut lockfile = Lockfile::new();
+        lockfile.record_tool_install(
+            "exa",
+            "latest",
+            "v1.0.0",
+            "github",
+            vec![BinaryLink {
+                link: "exa".to_string(),
+                source: source_bin.clone(),
+                target: valid_target.clone(),
+            }],
+        );
+
+        // Prune unused bin symlinks
+        workspace.prune_unused_bin(&lockfile).unwrap();
+        assert!(valid_target.exists(), "valid binary symlink should remain");
+        assert!(
+            !stale_target.exists(),
+            "stale symlink should be removed by prune_unused_bin"
+        );
+
+        // Create an unused cached version directory
+        let unused_version_dir = tools_root.join("exa").join("v2.0.0");
+        fs::create_dir_all(&unused_version_dir).unwrap();
+        fs::write(unused_version_dir.join("placeholder"), "data").unwrap();
+
+        // Prune unused cache versions
+        workspace.prune_unused_cache(&lockfile).unwrap();
+
+        // Referenced version should remain; unused removed
+        assert!(
+            tool_version_dir.exists(),
+            "referenced cached version directory should remain"
+        );
+        assert!(
+            !unused_version_dir.exists(),
+            "unreferenced cached version directory should be removed"
+        );
+
         drop(temp);
     }
 }

@@ -1,0 +1,168 @@
+# cargo-deny configuration for the `dws` project
+#
+# Purpose:
+# - Enforce allowed license set (per project philosophy: permissive licenses only)
+# - Flag yanked / unmaintained / vulnerable crates
+# - Ban deprecated or policy-violating crates
+# - Detect version duplication issues that could increase attack surface
+#
+# References:
+# - DEPENDENCIES.md (upgrade & audit policy)
+# - Workflow: .github/workflows/deps.yml (cargo deny check job)
+#
+# Typical invocation:
+#   cargo deny check            # full policy
+#   cargo deny check licenses   # focus licenses
+#   cargo deny check advisories # focus security
+#
+# NOTE: Keep this file minimal; grow only with documented policy decisions.
+#       When updating, add a brief rationale with date.
+
+################################################################################
+# LICENSE POLICY
+################################################################################
+[licenses]
+# We allow OSI/FSF approved permissive licenses.
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "BSD-3-Clause",
+  "BSD-2-Clause",
+  "ISC",
+  "Unicode-DFS-2016",
+  "Zlib",
+  "OpenSSL",            # Required transitively (ring, etc.)
+  "CC0-1.0",            # Accept for data/tables
+]
+
+# Explicitly deny strong / weak copyleft and business source style licenses.
+deny = [
+  "AGPL-3.0",
+  "AGPL-1.0",
+  "GPL-3.0",
+  "GPL-2.0",
+  "GPL-1.0",
+  "LGPL-3.0",
+  "LGPL-2.1",
+  "MPL-2.0",      # Not currently accepted (can revisit if needed)
+  "EPL-2.0",
+  "CDDL-1.0",
+  "BUSL-1.1",
+  "SSPL-1.0",
+]
+
+# Reject copyleft automatically (defense-in-depth vs missing deny entries)
+copyleft = "deny"
+
+# Confidence threshold for automated license detection
+confidence-threshold = 0.8
+
+# Ignore private crates (none in this workspace today)
+private = { ignore = true }
+
+# Lint: Fail if a crate has multiple possible license expressions and none match
+multiple = "deny"
+
+# Clarify composite / ambiguous licenses where upstream bundles multiple texts.
+# (Example: ring pulls in BoringSSL / OpenSSL-like licensing)
+[licenses.clarify]
+# Example template (uncomment & adapt if needed in future)
+# [[licenses.clarify]]
+# name = "ring"
+# expression = "BSD-3-Clause AND OpenSSL"
+# license-files = [
+#   { path = "LICENSE" },
+# ]
+
+################################################################################
+# SECURITY ADVISORIES
+################################################################################
+[advisories]
+# Git advisory DB (crates.io security advisories)
+db-path = ".cargo/advisory-db"
+fetch = true
+# Treat unsoundness / vulnerabilities seriously
+vulnerability = "deny"
+yanked = "warn"       # Yanked often indicates upstream wants upgrade; warn first
+unmaintained = "warn" # Allows triage before forced migration
+notice = "warn"
+
+# Severity gating: deny high/critical; warn medium; allow informational
+severity = { critical = "deny", high = "deny", medium = "warn", low = "warn", unknown = "warn" }
+
+# Ignore list (keep empty; add with comment + date when used)
+ignore = [
+  # Example:
+  # { id = "RUSTSEC-YYYY-XXXX", reason = "Pending upstream fix - tracked in issue #NNN (2025-10-16)" },
+]
+
+################################################################################
+# CRATE / VERSION BANS
+################################################################################
+[bans]
+# Detect multiple versions of the same crate
+multiple-versions = "warn"
+# Allow certain ubiquitous multi-version crates (only if needed)
+skip = [
+  # "windows-sys",  # (Add if version split becomes unavoidable)
+]
+# Warn about wildcards (should NOT be used in this project)
+wildcards = "deny"
+deny = [
+  { name = "atty", reason = "Deprecated/unmaintained; replaced by is-terminal (2025-10-16)" },
+]
+
+# Explicit permitted duplicates (add with rationale if required)
+skip-tree = [
+  # { name = "windows-sys", version = "0.48.0", reason = "Legacy transitive; awaiting upstream alignment" },
+]
+
+################################################################################
+# SOURCE CONTROL
+################################################################################
+[sources]
+# Only crates.io registry is allowed; forbid unknown git sources for deterministic builds.
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+deny-git = true
+
+# Allow list for vetted git sources (none currently)
+allow-git = [
+  # { url = "https://github.com/example/critical-patch", rev = "abc123", reason = "Temporary CVE patch (2025-10-16)" },
+]
+
+################################################################################
+# BUILD / OTHER CHECKS
+################################################################################
+[licenses.unused]
+# Fail if unused entries in allow/deny lists accumulate (keeps config lean)
+unused = "deny"
+
+[features]
+# Ensure no unexpected default features enabling heavy deps; warn instead of deny
+default = "warn"
+
+################################################################################
+# OUTPUT / UX
+################################################################################
+[output]
+# Show path origins for easier triage
+format = "text"
+report = "full"
+
+################################################################################
+# FUTURE PLACEHOLDERS
+################################################################################
+# [graph]
+# # Potential future: enforce minimal depth for security-sensitive crates
+# # enabled = true
+
+# [sources.crates-io]
+# replace-with = "mirror"
+# [source.mirror]
+# registry = "https://my-internal-mirror/index"
+#
+# (Not enabled; placeholder for future supply-chain hardening.)
+
+################################################################################
+# END OF FILE
+################################################################################

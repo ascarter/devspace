@@ -6,6 +6,7 @@ Last reviewed: 2025-10-16
 Related commits:
 - 26a371b: Replace `atty` with `is-terminal`
 - 28fc610: Refresh `Cargo.lock` after removal of `atty`
+- (Phase 0) Removed `ubi` external installer dependency
 
 ---
 
@@ -80,10 +81,11 @@ Categories:
 - Risk: Low (widely adopted).
 - Future: Potentially introduce a cooperative cancellation abstraction for installer tasks.
 
-### ubi
-- Rationale: GitHub release binary installer (downloading + unpack).
-- Risk: Medium (smaller project, bus factor).
-- Future: Abstract behind an `Installer` trait; allow mocking & fallback to custom minimal release fetch logic. Evaluate performance and reliability quarterly.
+### (removed) ubi
+- Status: Removed in Phase 0 refactor.
+- Replaced by: Internal installer abstraction (`InstallerKind` variants) with upcoming GitHub/GitLab/script backends.
+- Rationale for removal: Reduce external dependency risk (bus factor), enable deterministic testing, tighter control over asset selection & checksum verification.
+- Action: No longer audited as a direct dependency; any reintroduction must justify a capability gap.
 
 ### walkdir
 - Rationale: Recursive filesystem traversal for tool / config operations.
@@ -140,6 +142,7 @@ Categories:
 | Date (UTC) | Change | Reason | Commits |
 |------------|--------|--------|---------|
 | 2025-10-16 | `atty` → `is-terminal` | `atty` unmaintained; modern API & advisory resolution | 26a371b, 28fc610 |
+| 2025-10-16 | Removed direct dependency `ubi` | Phase 0 installer refactor (internal backends) | (commit TBD) |
 
 ---
 
@@ -175,7 +178,7 @@ Categories:
 |---------------|-----------------------|-------|-------|
 | chrono        | `time` crate          | Smaller API surface, modern formatting | Ensure RFC3339 parsing equivalence + local TZ formatting behavior parity. |
 | directories   | `directories-next` / manual XDG resolution | Maintenance continuity | Prototype manual resolution to measure complexity. |
-| ubi           | Internal installer abstraction | Control + testability | Start trait design; fallback pure Rust GitHub fetch + decompress. |
+| (removed) ubi | Internal installer abstraction | Achieved | Removed Phase 0; internal backends in progress. |
 | reqwest (blocking) | Async-only + small blocking wrapper | Lean runtime | Depends on concurrency needs; reassess after installer abstraction. |
 | whoami        | Inline platform logic | Reduce deps | Only if dependency churn grows. |
 
@@ -246,16 +249,17 @@ Tracked in `TODO.md`:
 - Create CI workflow for dependency health.
 - Add `deny.toml` configuration.
 - Provide color control flags.
-- Abstract installer logic.
+- Implement internal installer backends (GitHub/GitLab/script) after `ubi` removal.
 
 ---
 
-## 12. Verification Snapshot (Post atty Removal)
+## 12. Verification Snapshot (Post atty & ubi Removal)
 
 Checks performed (2025-10-16):
 - Grep for `atty` → none in source & lockfile.
+- Grep for `ubi` → present only in lockfile due to stale entry; removal in progress (Phase 0).
 - `cargo check` succeeded.
-- Lockfile refreshed; no residual transitive atty edges.
+- Lockfile refresh required to purge `ubi` (tracked in Phase 0 tasks).
 
 ---
 
@@ -266,6 +270,7 @@ Allowed (current policy):
 - Apache-2.0
 - BSD-3-Clause
 - (Add MPL-2.0 if necessary; requires explicit approval)
+
 Denied by default:
 - GPL family (unless dual-licensed fallback present)
 - AGPL
