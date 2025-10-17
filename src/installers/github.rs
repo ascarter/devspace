@@ -3,8 +3,18 @@ use regex::Regex;
 use reqwest::blocking::{Client, Response};
 use reqwest::header::{ACCEPT, USER_AGENT};
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 use std::cmp::{Ordering, Reverse};
 use std::env;
+use std::fs::{self, File};
+use std::io::{self, Read, Write};
+use std::path::{Path, PathBuf};
+use tar::Archive;
+use walkdir::WalkDir;
+use xz2::read::XzDecoder;
+use zip::ZipArchive;
+
+use flate2::read::GzDecoder;
 
 const API_ROOT: &str = "https://api.github.com";
 const DEFAULT_USER_AGENT: &str = "dws/0.1";
@@ -64,6 +74,63 @@ impl GithubClient {
         response
             .json::<GithubRelease>()
             .with_context(|| format!("Failed to decode GitHub release response from {url}"))
+    }
+
+    pub fn download_asset(&self, url: &str, dest: &Path) -> Result<[u8; 32]> {
+        let mut request = self.http.get(url).header(USER_AGENT, &self.user_agent);
+
+        if let Some(token) = &self.token {
+            request = request.bearer_auth(token);
+        }
+
+        let mut response = request
+            .send()
+            .with_context(|| format!("Failed to download GitHub asset from {url}"))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response
+                .text()
+                .unwrap_or_else(|_| "<unavailable>".to_string());
+            bail!("GitHub asset download returned {status}: {body}");
+        }
+
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent).with_context(|| {
+                format!("Failed to create parent directory for asset at {:?}", dest)
+            })?;
+        }
+
+        let temp_path = dest.with_extension("download");
+        let mut file = File::create(&temp_path)
+            .with_context(|| format!("Failed to create temporary asset file at {:?}", temp_path))?;
+
+        let mut hasher = Sha256::new();
+        let mut buffer = [0u8; 8192];
+
+        loop {
+            let read = response
+                .read(&mut buffer)
+                .with_context(|| format!("Failed while reading asset stream from {url}"))?;
+            if read == 0 {
+                break;
+            }
+            file.write_all(&buffer[..read])
+                .with_context(|| format!("Failed while writing asset to {:?}", temp_path))?;
+            hasher.update(&buffer[..read]);
+        }
+
+        file.flush()
+            .with_context(|| format!("Failed to flush downloaded asset to {:?}", temp_path))?;
+
+        fs::rename(&temp_path, dest).with_context(|| {
+            format!(
+                "Failed to move downloaded asset from {:?} to {:?}",
+                temp_path, dest
+            )
+        })?;
+
+        Ok(hasher.finalize().into())
     }
 }
 
@@ -253,6 +320,176 @@ fn architecture_score(name: &str) -> i32 {
         score += 5;
     }
     score
+}
+
+pub fn parse_sha256(value: &str) -> Result<[u8; 32]> {
+    let trimmed = value.trim();
+    let digest = trimmed
+        .strip_prefix("sha256:")
+        .context("Checksum must use `sha256:<hex>` format")?;
+
+    if digest.len() != 64 {
+        bail!("SHA256 checksum must be exactly 64 hex characters");
+    }
+
+    let bytes = hex::decode(digest).with_context(|| "Failed to decode SHA256 checksum")?;
+    let mut array = [0u8; 32];
+    array.copy_from_slice(&bytes);
+    Ok(array)
+}
+
+pub fn format_digest(bytes: &[u8; 32]) -> String {
+    hex::encode(bytes)
+}
+
+pub fn compute_sha256(path: &Path) -> Result<[u8; 32]> {
+    let mut file = File::open(path)
+        .with_context(|| format!("Failed to open file for checksum calculation at {:?}", path))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 8192];
+
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .with_context(|| format!("Failed to read file {:?} while hashing", path))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+
+    Ok(hasher.finalize().into())
+}
+
+pub fn extract_archive(archive_path: &Path, dest: &Path) -> Result<()> {
+    let filename = archive_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    if filename.ends_with(".tar.gz") || filename.ends_with(".tgz") {
+        let file = File::open(archive_path)
+            .with_context(|| format!("Failed to open archive {:?}", archive_path))?;
+        let decoder = GzDecoder::new(file);
+        let mut archive = Archive::new(decoder);
+        archive
+            .unpack(dest)
+            .with_context(|| format!("Failed to unpack tar.gz archive {:?}", archive_path))?;
+    } else if filename.ends_with(".tar.xz") || filename.ends_with(".txz") {
+        let file = File::open(archive_path)
+            .with_context(|| format!("Failed to open archive {:?}", archive_path))?;
+        let decoder = XzDecoder::new(file);
+        let mut archive = Archive::new(decoder);
+        archive
+            .unpack(dest)
+            .with_context(|| format!("Failed to unpack tar.xz archive {:?}", archive_path))?;
+    } else if filename.ends_with(".tar") {
+        let file = File::open(archive_path)
+            .with_context(|| format!("Failed to open archive {:?}", archive_path))?;
+        let mut archive = Archive::new(file);
+        archive
+            .unpack(dest)
+            .with_context(|| format!("Failed to unpack tar archive {:?}", archive_path))?;
+    } else if filename.ends_with(".zip") {
+        let file = File::open(archive_path)
+            .with_context(|| format!("Failed to open zip archive {:?}", archive_path))?;
+        let mut archive = ZipArchive::new(file)
+            .with_context(|| format!("Failed to read zip archive {:?}", archive_path))?;
+
+        for index in 0..archive.len() {
+            let mut entry = archive.by_index(index).with_context(|| {
+                format!("Failed to read zip entry #{index} from {:?}", archive_path)
+            })?;
+
+            let Some(enclosed) = entry.enclosed_name().map(|path| dest.join(path)) else {
+                continue;
+            };
+
+            if entry.name().ends_with('/') {
+                fs::create_dir_all(&enclosed)
+                    .with_context(|| format!("Failed to create directory {:?}", enclosed))?;
+            } else {
+                if let Some(parent) = enclosed.parent() {
+                    fs::create_dir_all(parent).with_context(|| {
+                        format!("Failed to create parent directory {:?}", parent)
+                    })?;
+                }
+
+                let mut outfile = File::create(&enclosed)
+                    .with_context(|| format!("Failed to create file {:?}", enclosed))?;
+                io::copy(&mut entry, &mut outfile)
+                    .with_context(|| format!("Failed to extract zip entry {:?}", enclosed))?;
+
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    if let Some(mode) = entry.unix_mode() {
+                        fs::set_permissions(&enclosed, fs::Permissions::from_mode(mode))
+                            .with_context(|| {
+                                format!("Failed to set permissions on {:?}", enclosed)
+                            })?;
+                    }
+                }
+            }
+        }
+    } else {
+        let target = dest.join(
+            archive_path
+                .file_name()
+                .context("Archive path is missing a filename")?,
+        );
+        fs::copy(archive_path, &target)
+            .with_context(|| format!("Failed to copy asset {:?} to {:?}", archive_path, target))?;
+    }
+
+    Ok(())
+}
+
+pub fn resolve_binary_path(extract_root: &Path, source: &str) -> Result<PathBuf> {
+    let relative = Path::new(source);
+    if relative.is_absolute() {
+        bail!("Binary source path '{}' must be relative", source);
+    }
+
+    let direct = extract_root.join(relative);
+    if direct.exists() {
+        return Ok(direct);
+    }
+
+    if relative.components().count() == 1 {
+        let needle = relative.as_os_str();
+        let mut matches = Vec::new();
+        for entry in WalkDir::new(extract_root).into_iter() {
+            let entry = entry?;
+            if entry.file_type().is_file() && entry.file_name() == needle {
+                matches.push(entry.into_path());
+                if matches.len() > 1 {
+                    break;
+                }
+            }
+        }
+
+        return match matches.len() {
+            1 => Ok(matches.remove(0)),
+            0 => bail!(
+                "Binary '{}' not found in extracted contents under {:?}",
+                source,
+                extract_root
+            ),
+            _ => bail!(
+                "Binary '{}' matched multiple files in extracted contents under {:?}",
+                source,
+                extract_root
+            ),
+        };
+    }
+
+    bail!(
+        "Binary '{}' not found at relative path {:?} inside extracted contents",
+        source,
+        relative
+    );
 }
 
 #[cfg(test)]
