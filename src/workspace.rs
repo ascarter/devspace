@@ -607,6 +607,11 @@ impl Workspace {
 
     /// Add integration line to shell rc file (idempotent)
     fn add_shell_integration(rc_file: &PathBuf, integration_line: &str) -> Result<bool> {
+        if let Some(parent) = rc_file.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create parent directory for {:?}", rc_file))?;
+        }
+
         let existing_content = if rc_file.exists() {
             fs::read_to_string(rc_file).with_context(|| format!("Failed to read {:?}", rc_file))?
         } else {
