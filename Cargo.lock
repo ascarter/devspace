@@ -290,6 +290,7 @@ dependencies = [
  "reqwest",
  "rstest",
  "serde",
+ "serde_json",
  "serial_test",
  "tempfile",
  "thiserror",

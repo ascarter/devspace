@@ -1,8 +1,11 @@
 use crate::lockfile::Lockfile;
 use crate::toolset::{InstallerKind, ToolBinary, ToolDefinition};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::path::PathBuf;
 use tokio::runtime::Runtime;
+
+mod github;
+use github::GithubClient;
 
 // Phase 0 refactor: removed external `ubi` installer backend.
 // Placeholder: future github/gitlab/script modules will be added here.
@@ -24,21 +27,30 @@ pub(crate) struct InstallerDispatch {
     pub resolved_version: Option<String>,
 }
 
-// Stub GitHub installer backend (Phase 0)
-// Will later: fetch release metadata, select asset, download, extract, checksum.
 struct GithubInstaller {
     name: String,
+    project: String,
     version: Option<String>,
     bins: Vec<ToolBinary>,
+    client: GithubClient,
 }
 
 impl GithubInstaller {
-    fn new(def: &ToolDefinition) -> Self {
-        Self {
+    fn new(def: &ToolDefinition) -> Result<Self> {
+        let project = def
+            .project
+            .clone()
+            .context("GitHub installer requires a `project` field")?;
+
+        let client = GithubClient::from_env()?;
+
+        Ok(Self {
             name: def.name.clone(),
+            project,
             version: def.version.clone(),
             bins: def.bin.clone(),
-        }
+            client,
+        })
     }
 }
 
@@ -47,15 +59,15 @@ impl ToolInstaller for GithubInstaller {
         // Future async metadata/download will require a runtime.
         false
     }
-
     fn install(&self, _runtime: Option<&mut Runtime>, lockfile: &mut Lockfile) -> Result<()> {
-        // Phase 0 stub: record a placeholder receipt (no binaries yet).
-        // Timestamp handled internally by `record_tool_install`.
-        let manifest_version = self.version.clone().unwrap_or_else(|| "latest".to_string());
-        let resolved_version = manifest_version.clone();
+        let release = self
+            .client
+            .fetch_release(&self.project, self.version.as_deref())?;
 
-        // Touch requested binaries list so the field is considered used (suppresses dead_code warning
-        // until real asset selection populates BinaryLink entries).
+        let manifest_version = self.version.clone().unwrap_or_else(|| "latest".to_string());
+        let resolved_version = release.tag_name.clone();
+
+        // Phase 2 placeholder: future steps will select assets and install binaries.
         let _requested_bins = &self.bins;
 
         lockfile.record_tool_install(
@@ -75,8 +87,7 @@ pub(crate) fn create_installer(
 ) -> Result<Option<InstallerDispatch>> {
     match definition.installer {
         InstallerKind::Github => {
-            // Accept even if version missing; will resolve to "latest" placeholder.
-            let installer = GithubInstaller::new(definition);
+            let installer = GithubInstaller::new(definition)?;
             Ok(Some(InstallerDispatch {
                 resolved_version: installer.version.clone(),
                 installer: Box::new(installer),
