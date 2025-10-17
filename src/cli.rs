@@ -81,6 +81,9 @@ pub enum Commands {
     /// Clean up unused cache and orphaned symlinks
     Cleanup,
 
+    /// Validate profile and workspace manifests
+    Check,
+
     /// Output environment setup (used in shell init)
     Env {
         /// Shell type (zsh, bash, fish)

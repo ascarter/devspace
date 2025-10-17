@@ -286,6 +286,7 @@ dependencies = [
  "git2",
  "is-terminal",
  "predicates",
+ "regex",
  "reqwest",
  "rstest",
  "serde",

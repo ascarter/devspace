@@ -4,51 +4,61 @@
 #
 # An entry applies on every machine unless you specify filters:
 #   platform = ["macos", "linux", "linux-ubuntu"]  # matches current OS/distro
-#   hosts = ["work-laptop"]                        # matches sanitized hostname
+#   hosts = ["work-laptop"]                          # matches sanitized hostname
 #
 # When multiple files define the same tool, the higher-precedence file replaces
 # the entire entry. Workspace overrides live in $XDG_CONFIG_HOME/dws/config.toml.
 
 # [tools.ripgrep]
-# installer = "curl"
+# installer = "github"
 # project = "BurntSushi/ripgrep"
-# version = "14.0.0"  # Optional pin
-# asset_filters = ["ripgrep-.*-x86_64-apple-darwin\\.tar\\.gz"]
-# checksum = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-# (UBI removed; curl placeholder until internal GitHub backend lands)
-
-# [tools.rustup]
-# installer = "curl"
-# url = "https://sh.rustup.rs"
-# shell = "sh"
-# self_update = true
+# version = "v14.0.0"  # Optional pin
+# asset_filter = ["^ripgrep-14\\.0\\.0-x86_64-apple-darwin\\.tar\\.gz$"]
+# checksum = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+# platform = ["macos"]
+#
+# [[tools.ripgrep.bin]]
+# source = "rg"
+#
+# [[tools.ripgrep.extras]]
+# source = "doc/rg.1"
+# kind = "man"
+#
+# [[tools.ripgrep.extras]]
+# source = "complete/_rg"
+# kind = "completion"
+# shell = "zsh"
 
 # [tools.uv]
-# installer = "curl"
+# installer = "script"
 # url = "https://astral.sh/uv/install.sh"
 # shell = "sh"
-
-# [tools.fnm]
-# installer = "curl"
-# project = "Schniz/fnm"
-# asset_filters = ["fnm-.*-x86_64-unknown-linux-musl\\.tar\\.gz"]
-# checksum = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-# (UBI removed; adjust to curl or wait for github backend)
+# version = "latest"
+# checksum = "sha256:cafecafecafecafecafecafecafecafecafecafecafecafecafecafecafecafe"
+# self_update = true
+#
+# [[tools.uv.bin]]
+# source = "uv"
 
 # [tools.helix]
-# installer = "curl"
+# installer = "github"
 # project = "helix-editor/helix"
-# bin = ["hx"]
-# asset_filters = ["helix-.*-x86_64-linux\\.tar\\.xz"]
-# checksum = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-# (UBI removed; curl placeholder until archive installer implemented)
-# symlinks = ["contrib/completion/hx.zsh:${XDG_DATA_HOME}/zsh/completions/_hx"]
-# status_cmd = "hx --version"
+# asset_filter = ["^helix-.*-x86_64-linux\\.tar\\.xz$"]
+# checksum = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+#
+# [[tools.helix.bin]]
+# source = "hx"
+#
+# [[tools.helix.extras]]
+# source = "contrib/runtime/queries"
+# kind = "other"
+# target = "${XDG_DATA_HOME}/dws/helix/queries"
 
 # [tools.gh]
-# installer = "curl"
+# installer = "github"
 # project = "cli/cli"
-# bin = ["bin/gh"]
-# asset_filters = ["gh_.*_macOS_amd64\\.tar\\.gz"]
-# checksum = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-# (UBI removed; curl placeholder)
+# asset_filter = ["^gh_.*_macOS_amd64\\.tar\\.gz$"]
+# checksum = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+#
+# [[tools.gh.bin]]
+# source = "bin/gh"

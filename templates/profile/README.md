@@ -59,20 +59,18 @@ Each entry under the `[tools.*]` table describes a single tool. Supported fields
 
 | Field | Required | Description |
 | ----- | -------- | ----------- |
-| `installer` | ✅ | Backend to use: `curl`, `dmg`, or `flatpak`. (UBI removed; future internal GitHub release backend may be added) |
-| `project` | optional | GitHub `owner/repo` (reserved for future GitHub release backend; ignored by current `curl`/`dmg`/`flatpak`). |
-| `version` | optional | Pin to a specific release. Omit for latest. |
-| `url` | optional | Direct download URL for scripts or disk images. |
-| `shell` | optional | Shell interpreter to run installer scripts (e.g. `sh`). |
-| `bin` | optional | Array of executables to link into `~/.local/state/dws/bin`. |
-| `symlinks` | optional | Extra files to link using `source:target` pairs. |
-| `asset_filters` | optional | List of regex patterns (OR semantics) matched against release asset filenames to select an install candidate. |
-| `checksum` | optional | SHA256 (hex) expected for the selected asset; required when `asset_filters` is non-empty for integrity verification. |
-| `app` | optional | `.app` bundle name for macOS DMG installs. |
-| `team_id` | optional | Apple Developer team ID for signed macOS apps. |
-| `self_update` | optional | Set to `true` if the tool updates itself and should be skipped by `dws update`. |
-| `platform` | optional | List of platforms this tool applies to (`macos`, `linux`, `linux-ubuntu`, etc.). |
-| `hosts` | optional | List of sanitized hostnames for machine-specific entries. |
+| `installer` | ✅ | Backend identifier (`github`, `gitlab`, `script`, `dmg`, `flatpak`). |
+| `project` | forge installers | Required for `github`/`gitlab` entries (`owner/repo`). |
+| `version` | optional | Pin to a specific tag or use `"latest"`. |
+| `url` | script installer | Required when `installer = "script"`; ignored otherwise. |
+| `shell` | script/completion | Interpreter for scripts; completion extras must declare a shell. |
+| `[[tools.<name>.bin]]` | ✅ | Add one table per binary (`source`, optional `link` alias). |
+| `[[tools.<name>.extras]]` | optional | Additional artifacts (`source`, `kind` = `man`\|`completion`\|`other`; completions require `shell`). |
+| `asset_filter` | forge installers | Ordered regex list evaluated against release assets. |
+| `checksum` | ✅ | `sha256:<hex>` content digest for archives or scripts. |
+| `self_update` | optional | `true` when the tool updates itself; skips reinstall during `dws update`. |
+| `platform` | optional | Platform filters (`macos`, `linux`, distro tags). |
+| `hosts` | optional | Sanitized hostname filters for machine-specific tools. |
 
 Profile `dws.toml` files form the base. You can add workspace-specific overrides by editing `$XDG_CONFIG_HOME/dws/config.toml`; when a tool name appears in both places, the workspace entry replaces the profile entry entirely. Filters that do not match the current platform or hostname fall back to the profile definition.
 

@@ -1,5 +1,5 @@
 use crate::lockfile::Lockfile;
-use crate::toolset::{InstallerKind, ToolDefinition};
+use crate::toolset::{InstallerKind, ToolBinary, ToolDefinition};
 use anyhow::Result;
 use std::path::PathBuf;
 use tokio::runtime::Runtime;
@@ -29,7 +29,7 @@ pub(crate) struct InstallerDispatch {
 struct GithubInstaller {
     name: String,
     version: Option<String>,
-    bins: Vec<String>,
+    bins: Vec<ToolBinary>,
 }
 
 impl GithubInstaller {
@@ -106,7 +106,7 @@ pub(crate) fn sanitize_component(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{create_installer, sanitize_component, InstallContext};
-    use crate::toolset::{InstallerKind, ToolDefinition};
+    use crate::toolset::{InstallerKind, ToolBinary, ToolDefinition};
     use std::path::PathBuf;
 
     #[test]
@@ -127,12 +127,20 @@ mod tests {
             url: None,
             shell: None,
             bin: if bins.is_empty() {
-                vec!["tool".to_string()]
+                vec![ToolBinary {
+                    source: "tool".to_string(),
+                    link: None,
+                }]
             } else {
-                bins
+                bins.into_iter()
+                    .map(|name| ToolBinary {
+                        source: name,
+                        link: None,
+                    })
+                    .collect()
             },
-            symlinks: Vec::new(),
-            asset_filters: Vec::new(),
+            extras: Vec::new(),
+            asset_filter: Vec::new(),
             checksum: None,
             app: None,
             team_id: None,
@@ -156,6 +164,8 @@ mod tests {
             (InstallerKind::Dmg, false),
             (InstallerKind::Flatpak, false),
             (InstallerKind::Github, true),
+            (InstallerKind::Gitlab, false),
+            (InstallerKind::Script, false),
         ];
         for (kind, expected_some) in cases {
             let definition = sample_definition(kind, vec!["tool".to_string()]);

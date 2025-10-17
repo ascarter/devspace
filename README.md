@@ -64,6 +64,9 @@ dws status
 # Clean up unused cache and orphaned symlinks
 dws cleanup
 
+# Validate manifest structure
+dws check
+
 # Switch profiles
 dws profiles
 dws use work

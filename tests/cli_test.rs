@@ -217,6 +217,73 @@ fn test_clone_and_use_profile() {
 
 #[test]
 #[serial]
+fn test_check_success() {
+    let temp = TempDir::new().unwrap();
+
+    Command::cargo_bin("dws")
+        .unwrap()
+        .env("XDG_CONFIG_HOME", temp.path())
+        .env("XDG_STATE_HOME", temp.path().join("state"))
+        .env("XDG_CACHE_HOME", temp.path().join("cache"))
+        .env("HOME", temp.path())
+        .env("SHELL", "/bin/zsh")
+        .arg("init")
+        .assert()
+        .success();
+
+    Command::cargo_bin("dws")
+        .unwrap()
+        .env("XDG_CONFIG_HOME", temp.path())
+        .env("XDG_STATE_HOME", temp.path().join("state"))
+        .env("XDG_CACHE_HOME", temp.path().join("cache"))
+        .env("HOME", temp.path())
+        .arg("check")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Validated"));
+}
+
+#[test]
+#[serial]
+fn test_check_reports_errors() {
+    let temp = TempDir::new().unwrap();
+
+    Command::cargo_bin("dws")
+        .unwrap()
+        .env("XDG_CONFIG_HOME", temp.path())
+        .env("XDG_STATE_HOME", temp.path().join("state"))
+        .env("XDG_CACHE_HOME", temp.path().join("cache"))
+        .env("HOME", temp.path())
+        .env("SHELL", "/bin/zsh")
+        .arg("init")
+        .assert()
+        .success();
+
+    let manifest = r#"
+[tools.invalid]
+installer = "github"
+project = "example/invalid"
+asset_filter = ["^invalid$"]
+
+[[tools.invalid.bin]]
+source = "invalid"
+"#;
+    fs::write(temp.path().join("dws/profiles/default/dws.toml"), manifest).unwrap();
+
+    Command::cargo_bin("dws")
+        .unwrap()
+        .env("XDG_CONFIG_HOME", temp.path())
+        .env("XDG_STATE_HOME", temp.path().join("state"))
+        .env("XDG_CACHE_HOME", temp.path().join("cache"))
+        .env("HOME", temp.path())
+        .arg("check")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("checksum is required"));
+}
+
+#[test]
+#[serial]
 fn test_use_missing_profile_fails() {
     let temp = TempDir::new().unwrap();
 

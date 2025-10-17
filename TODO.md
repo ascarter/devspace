@@ -1,7 +1,7 @@
 # TODO
 
 - [x] Phase 0: Remove `ubi`; scaffold installer core layout; bump lockfile schema to v2 (tool_receipts)
-- [ ] Phase 1: New manifest parser (tables for bin/extras, asset_filter regex list, checksum) + `dws check` structural validation
+- [x] Phase 1: New manifest parser (tables for bin/extras, asset_filter regex list, checksum) + `dws check` structural validation
 - [ ] Phase 2: GitHub backend (release metadata fetch, asset selection scoring, download, extract, receipt write)
 - [ ] Phase 3: Checksum discovery & verification (asset + script) + receipt status updates
 - [ ] Phase 4: Script installer backend (download, checksum verify, execute, explicit binaries)
@@ -70,4 +70,3 @@
   - Add CodeQL or additional static security analysis
   - Add PR status badge summarizing license/audit state
   - Automatic version bump + tag workflow (conventional commits) feeding release.yml
-

@@ -2,6 +2,7 @@ use crate::cli::{Cli, Commands};
 use crate::Workspace;
 use anyhow::Result;
 
+mod check;
 mod cleanup;
 mod clone_cmd;
 mod env;
@@ -43,6 +44,8 @@ pub fn execute(cli: Cli) -> Result<()> {
         Commands::Status => status::execute(&workspace),
 
         Commands::Cleanup => cleanup::execute(&workspace),
+
+        Commands::Check => check::execute(&workspace),
 
         Commands::Env { shell } => env::execute(&workspace, shell),
 
