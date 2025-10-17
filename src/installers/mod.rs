@@ -32,6 +32,7 @@ struct GithubInstaller {
     project: String,
     version: Option<String>,
     bins: Vec<ToolBinary>,
+    asset_filters: Vec<String>,
     client: GithubClient,
 }
 
@@ -49,6 +50,7 @@ impl GithubInstaller {
             project,
             version: def.version.clone(),
             bins: def.bin.clone(),
+            asset_filters: def.asset_filter.clone(),
             client,
         })
     }
@@ -64,11 +66,19 @@ impl ToolInstaller for GithubInstaller {
             .client
             .fetch_release(&self.project, self.version.as_deref())?;
 
+        let selected = release.select_asset(&self.asset_filters).with_context(|| {
+            format!(
+                "Failed to select asset for tool '{}' using patterns {:?}",
+                self.name, self.asset_filters
+            )
+        })?;
+
         let manifest_version = self.version.clone().unwrap_or_else(|| "latest".to_string());
         let resolved_version = release.tag_name.clone();
 
         // Phase 2 placeholder: future steps will select assets and install binaries.
         let _requested_bins = &self.bins;
+        let _asset_name = &selected.asset.name;
 
         lockfile.record_tool_install(
             &self.name,

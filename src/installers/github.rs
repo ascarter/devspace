@@ -1,7 +1,9 @@
 use anyhow::{bail, Context, Result};
+use regex::Regex;
 use reqwest::blocking::{Client, Response};
 use reqwest::header::{ACCEPT, USER_AGENT};
 use serde::Deserialize;
+use std::cmp::{Ordering, Reverse};
 use std::env;
 
 const API_ROOT: &str = "https://api.github.com";
@@ -115,6 +117,144 @@ pub struct GithubAsset {
     pub state: Option<String>,
 }
 
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct SelectedAsset<'a> {
+    pub asset: &'a GithubAsset,
+    pub pattern_index: usize,
+    pub pattern: &'a str,
+}
+
+impl GithubRelease {
+    pub fn select_asset<'a>(&'a self, filters: &'a [String]) -> Result<SelectedAsset<'a>> {
+        if filters.is_empty() {
+            bail!("GitHub installer requires at least one asset_filter pattern");
+        }
+
+        if self.assets.is_empty() {
+            bail!(
+                "GitHub release '{}' does not expose any assets",
+                self.tag_name
+            );
+        }
+
+        for (index, pattern) in filters.iter().enumerate() {
+            let regex = Regex::new(pattern)
+                .with_context(|| format!("Invalid asset_filter regex '{pattern}'"))?;
+
+            let mut best: Option<(&GithubAsset, AssetRank<'_>)> = None;
+            let mut ambiguous = false;
+
+            for asset in &self.assets {
+                if !regex.is_match(&asset.name) {
+                    continue;
+                }
+
+                let rank = AssetRank::new(asset);
+                match &mut best {
+                    None => best = Some((asset, rank)),
+                    Some((_, current_rank)) => match rank.cmp(current_rank) {
+                        Ordering::Greater => {
+                            best = Some((asset, rank));
+                            ambiguous = false;
+                        }
+                        Ordering::Equal => {
+                            ambiguous = true;
+                        }
+                        Ordering::Less => {}
+                    },
+                }
+            }
+
+            if let Some((asset, _)) = best {
+                if ambiguous {
+                    bail!("Asset filter '{pattern}' matched multiple assets with equal scoring");
+                }
+
+                return Ok(SelectedAsset {
+                    asset,
+                    pattern_index: index,
+                    pattern,
+                });
+            }
+        }
+
+        bail!(
+            "No release asset matched the provided asset_filter patterns: {:?}",
+            filters
+        );
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct AssetRank<'a> {
+    score: i32,
+    size: Reverse<u64>,
+    name: Reverse<&'a str>,
+}
+
+impl<'a> AssetRank<'a> {
+    fn new(asset: &'a GithubAsset) -> Self {
+        let mut score = 0;
+        if matches!(asset.state.as_deref(), Some("uploaded" | "available")) {
+            score += 100;
+        }
+
+        score += extension_score(&asset.name);
+        score += architecture_score(&asset.name);
+
+        Self {
+            score,
+            size: Reverse(asset.size),
+            name: Reverse(asset.name.as_str()),
+        }
+    }
+}
+
+impl<'a> Ord for AssetRank<'a> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (self.score, &self.size, &self.name).cmp(&(other.score, &other.size, &other.name))
+    }
+}
+
+impl<'a> PartialOrd for AssetRank<'a> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+fn extension_score(name: &str) -> i32 {
+    if name.ends_with(".tar.gz") || name.ends_with(".tar.xz") {
+        30
+    } else if name.ends_with(".tgz") {
+        25
+    } else if name.ends_with(".zip") {
+        20
+    } else if name.ends_with(".tar") {
+        15
+    } else {
+        5
+    }
+}
+
+fn architecture_score(name: &str) -> i32 {
+    let lowered = name.to_ascii_lowercase();
+    let mut score = 0;
+    if lowered.contains("x86_64") || lowered.contains("amd64") {
+        score += 10;
+    }
+    if lowered.contains("arm64") || lowered.contains("aarch64") {
+        score += 7;
+    }
+    if lowered.contains("linux") {
+        score += 5;
+    }
+    if lowered.contains("apple") || lowered.contains("darwin") || lowered.contains("macos") {
+        score += 5;
+    }
+    score
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -162,5 +302,75 @@ mod tests {
         assert_eq!(release.tag_name, "v1.0.0");
         assert_eq!(release.assets.len(), 1);
         assert_eq!(release.assets[0].name, "tool.tar.gz");
+    }
+
+    fn sample_release() -> GithubRelease {
+        GithubRelease {
+            id: 1,
+            tag_name: "v1.0.0".to_string(),
+            name: Some("Release".to_string()),
+            draft: false,
+            prerelease: false,
+            assets: vec![
+                GithubAsset {
+                    id: 10,
+                    name: "tool-macos-x86_64.tar.gz".to_string(),
+                    content_type: Some("application/gzip".to_string()),
+                    browser_download_url: "https://example.com/mac.tar.gz".to_string(),
+                    size: 1024,
+                    state: Some("uploaded".to_string()),
+                },
+                GithubAsset {
+                    id: 11,
+                    name: "tool-macos-arm64.tar.gz".to_string(),
+                    content_type: Some("application/gzip".to_string()),
+                    browser_download_url: "https://example.com/arm.tar.gz".to_string(),
+                    size: 2048,
+                    state: Some("uploaded".to_string()),
+                },
+                GithubAsset {
+                    id: 12,
+                    name: "tool-windows.zip".to_string(),
+                    content_type: Some("application/zip".to_string()),
+                    browser_download_url: "https://example.com/win.zip".to_string(),
+                    size: 4096,
+                    state: Some("uploaded".to_string()),
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn select_asset_with_matching_pattern() {
+        let release = sample_release();
+        let filters = vec!["macos".to_string(), "windows".to_string()];
+        let selected = release.select_asset(&filters).unwrap();
+        assert_eq!(selected.pattern_index, 0);
+        assert_eq!(selected.asset.name, "tool-macos-x86_64.tar.gz");
+    }
+
+    #[test]
+    fn select_asset_uses_subsequent_pattern() {
+        let release = sample_release();
+        let filters = vec!["linux".to_string(), "windows".to_string()];
+        let selected = release.select_asset(&filters).unwrap();
+        assert_eq!(selected.pattern_index, 1);
+        assert_eq!(selected.asset.name, "tool-windows.zip");
+    }
+
+    #[test]
+    fn select_asset_reports_missing_match() {
+        let release = sample_release();
+        let filters = vec!["linux".to_string()];
+        let err = release.select_asset(&filters).unwrap_err();
+        assert!(err.to_string().contains("No release asset matched"));
+    }
+
+    #[test]
+    fn select_asset_detects_invalid_regex() {
+        let release = sample_release();
+        let filters = vec!["[".to_string()];
+        let err = release.select_asset(&filters).unwrap_err();
+        assert!(err.to_string().contains("Invalid asset_filter regex"));
     }
 }
