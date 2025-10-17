@@ -1,0 +1,130 @@
+name: Dependency Health
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "deny.toml"
+      - "DEPENDENCIES.md"
+  pull_request:
+    branches: [ main ]
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "deny.toml"
+      - "DEPENDENCIES.md"
+  schedule:
+    - cron: "0 6 1 */3 *" # Quarterly (Jan/Apr/Jul/Oct at 06:00 UTC)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: short
+
+concurrency:
+  group: deps-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          key: audit-${{ runner.os }}
+
+      - name: Install cargo-audit
+        run: cargo install --locked cargo-audit || echo "cargo-audit already installed"
+
+      - name: Run cargo audit
+        run: cargo audit
+
+  license-policy:
+    name: License / Policy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          key: deny-${{ runner.os }}
+
+      - name: Install cargo-deny
+        run: cargo install --locked cargo-deny || echo "cargo-deny already installed"
+
+      - name: Deny check
+        run: cargo deny check
+
+  version-drift:
+    name: Outdated (Advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          key: outdated-${{ runner.os }}
+
+      - name: Install cargo-outdated
+        run: cargo install --locked cargo-outdated || echo "cargo-outdated already installed"
+
+      - name: Check root deps
+        run: cargo outdated --root-deps-only || true
+
+      - name: Save outdated summary
+        run: cargo outdated --root-deps-only > outdated.txt || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: outdated-report
+          path: outdated.txt
+          retention-days: 14
+
+  summary:
+    name: Summary Gate
+    runs-on: ubuntu-latest
+    needs:
+      - security-audit
+      - license-policy
+      - version-drift
+    steps:
+      - name: Outcome
+        run: |
+          echo "Dependency health workflow complete."
+          echo "Results:"
+          echo " - Security Audit:   ${{ needs.security-audit.result }}"
+          echo " - License Policy:   ${{ needs.license-policy.result }}"
+          echo " - Version Drift:    ${{ needs.version-drift.result }}"
+          if [ "${{ needs.security-audit.result }}" != "success" ]; then
+            echo "::warning title=Security Audit::Audit did not succeed."
+          fi
+          if [ "${{ needs.license-policy.result }}" != "success" ]; then
+            echo "::warning title=License Policy::License/policy check did not succeed."
+          fi
+          echo "Review 'outdated-report' artifact for upgrade opportunities."

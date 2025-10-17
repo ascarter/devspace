@@ -59,3 +59,15 @@
   - Trait for installers enabling mock & offline tests
   - Prepare for potential replacement / augmentation of `ubi`
 
+- [ ] Optional workflow enhancements (post-integration)
+  - Add PR comment summarizing dependency health results (github-script)
+  - Generate changelog/release notes automatically (release-drafter or conventional commits parser)
+  - Produce provenance / SLSA attestation for release artifacts
+  - Add SBOM generation (cargo auditable or CycloneDX)
+  - Add Windows target build (if Windows support is desired)
+  - Move minimal-versions job to a weekly schedule (reduce push noise)
+  - Nightly/beta toolchain smoke build (non-gating early warning)
+  - Add CodeQL or additional static security analysis
+  - Add PR status badge summarizing license/audit state
+  - Automatic version bump + tag workflow (conventional commits) feeding release.yml
+
