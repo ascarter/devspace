@@ -613,6 +613,14 @@ impl Workspace {
             String::new()
         };
 
+        if let Some(parent) = rc_file.parent() {
+            if !parent.as_os_str().is_empty() && !parent.exists() {
+                fs::create_dir_all(parent).with_context(|| {
+                    format!("Failed to create parent directory for {:?}", rc_file)
+                })?;
+            }
+        }
+
         if existing_content.contains(integration_line) {
             return Ok(false);
         }
