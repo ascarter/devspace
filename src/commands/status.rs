@@ -146,26 +146,35 @@ fn report_tools(
             }
             Some(rs) => {
                 let versions: Vec<String> = rs.iter().map(|r| r.resolved_version.clone()).collect();
-                let (binary_total, extra_total, issues) = verify_tool_receipts(&rs, display);
+                let (binary_total, extra_total, asset_state, issues) =
+                    verify_tool_receipts(&rs, display);
+
+                let asset_summary = match asset_state {
+                    AssetState::NotRecorded => "asset: none",
+                    AssetState::Healthy => "asset: cached",
+                    AssetState::Missing => "asset: missing",
+                };
 
                 if issues.is_empty() {
                     ui::success(
                         "Tool",
                         format!(
-                            "{} {} (binaries: {}, extras: {})",
+                            "{} {} (binaries: {}, extras: {}, {})",
                             name,
                             versions.join(", "),
                             binary_total,
-                            extra_total
+                            extra_total,
+                            asset_summary
                         ),
                     );
                     ok_count += 1;
                 } else {
                     ui::warn(format!(
-                        "Tool '{}' has {} issue(s) across version(s) {}",
+                        "Tool '{}' has {} issue(s) across version(s: {}) ({})",
                         name,
                         issues.len(),
-                        versions.join(", ")
+                        versions.join(", "),
+                        asset_summary
                     ));
                     for issue in issues {
                         ui::warn(issue);
@@ -193,10 +202,12 @@ fn report_tools(
 fn verify_tool_receipts(
     receipts: &[&ToolReceipt],
     display: &DisplayContext,
-) -> (usize, usize, Vec<String>) {
+) -> (usize, usize, AssetState, Vec<String>) {
     let mut issues = Vec::new();
     let mut binaries = 0usize;
     let mut extras = 0usize;
+    let mut asset_recorded = false;
+    let mut asset_missing = false;
 
     for receipt in receipts {
         for bin in &receipt.binaries {
@@ -267,22 +278,35 @@ fn verify_tool_receipts(
         }
 
         if let Some(asset) = &receipt.asset {
+            asset_recorded = true;
             if !asset.archive_path.exists() {
                 issues.push(format!(
                     "Asset archive missing: {}",
                     display.format(&asset.archive_path)
                 ));
+                asset_missing = true;
             }
             if !asset.extract_dir.exists() {
                 issues.push(format!(
                     "Asset contents directory missing: {}",
                     display.format(&asset.extract_dir)
                 ));
+                asset_missing = true;
             }
         }
     }
 
-    (binaries, extras, issues)
+    let asset_state = if asset_recorded {
+        if asset_missing {
+            AssetState::Missing
+        } else {
+            AssetState::Healthy
+        }
+    } else {
+        AssetState::NotRecorded
+    };
+
+    (binaries, extras, asset_state, issues)
 }
 
 fn format_timestamp(raw: &str) -> String {
@@ -345,6 +369,105 @@ enum LinkState {
     WrongTarget { actual: PathBuf },
     MissingSource,
     IoError(std::io::Error),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AssetState {
+    NotRecorded,
+    Healthy,
+    Missing,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lockfile::AssetRecord;
+    use tempfile::TempDir;
+
+    fn display_context() -> DisplayContext {
+        DisplayContext::new(PathBuf::from("/workspace"))
+    }
+
+    #[test]
+    fn verify_tool_receipts_reports_missing_asset() {
+        let receipt = ToolReceipt {
+            name: "mock".to_string(),
+            manifest_version: "latest".to_string(),
+            resolved_version: "v1.0.0".to_string(),
+            installer_kind: "github".to_string(),
+            installed_at: "2025-01-01T00:00:00Z".to_string(),
+            binaries: Vec::new(),
+            extras: Vec::new(),
+            asset: Some(AssetRecord {
+                name: "mock.tar.gz".to_string(),
+                url: "https://example.com/mock.tar.gz".to_string(),
+                checksum: "deadbeef".to_string(),
+                archive_path: PathBuf::from("/tmp/missing.tar.gz"),
+                extract_dir: PathBuf::from("/tmp/missing"),
+                pattern_index: Some(0),
+                pattern: Some("mock".to_string()),
+            }),
+        };
+
+        let (_b, _e, asset_state, issues) = verify_tool_receipts(&[&receipt], &display_context());
+        assert_eq!(asset_state, AssetState::Missing);
+        assert!(issues
+            .iter()
+            .any(|issue| issue.contains("Asset archive missing")));
+        assert!(issues
+            .iter()
+            .any(|issue| issue.contains("Asset contents directory missing")));
+    }
+
+    #[test]
+    fn verify_tool_receipts_reports_healthy_asset() {
+        let temp = TempDir::new().unwrap();
+        let archive_path = temp.path().join("mock.tar.gz");
+        let extract_dir = temp.path().join("contents");
+        std::fs::write(&archive_path, b"tar").unwrap();
+        std::fs::create_dir_all(&extract_dir).unwrap();
+
+        let receipt = ToolReceipt {
+            name: "mock".to_string(),
+            manifest_version: "latest".to_string(),
+            resolved_version: "v1.0.0".to_string(),
+            installer_kind: "github".to_string(),
+            installed_at: "2025-01-01T00:00:00Z".to_string(),
+            binaries: Vec::new(),
+            extras: Vec::new(),
+            asset: Some(AssetRecord {
+                name: "mock.tar.gz".to_string(),
+                url: "https://example.com/mock.tar.gz".to_string(),
+                checksum: "deadbeef".to_string(),
+                archive_path,
+                extract_dir,
+                pattern_index: Some(0),
+                pattern: Some("mock".to_string()),
+            }),
+        };
+
+        let (_b, _e, asset_state, issues) = verify_tool_receipts(&[&receipt], &display_context());
+        assert_eq!(asset_state, AssetState::Healthy);
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn verify_tool_receipts_reports_not_recorded() {
+        let receipt = ToolReceipt {
+            name: "mock".to_string(),
+            manifest_version: "latest".to_string(),
+            resolved_version: "v1.0.0".to_string(),
+            installer_kind: "github".to_string(),
+            installed_at: "2025-01-01T00:00:00Z".to_string(),
+            binaries: Vec::new(),
+            extras: Vec::new(),
+            asset: None,
+        };
+
+        let (_b, _e, asset_state, issues) = verify_tool_receipts(&[&receipt], &display_context());
+        assert_eq!(asset_state, AssetState::NotRecorded);
+        assert!(issues.is_empty());
+    }
 }
 
 struct DisplayContext {
