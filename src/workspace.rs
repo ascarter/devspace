@@ -16,7 +16,7 @@ use crate::dotfiles::Dotfiles;
 use crate::environment::{Environment, Shell};
 use crate::installers::{self, InstallContext, ToolInstaller};
 // ToolEntry removed in schema v2; legacy alias dropped
-use crate::lockfile::Lockfile;
+use crate::lockfile::{Lockfile, ToolReceipt};
 use crate::profile::Profile;
 use crate::toolset::{ToolDefinition, ToolSet};
 use crate::ui::{self, Progress};
@@ -979,27 +979,7 @@ impl Workspace {
                     let missing_paths = lockfile
                         .tool_receipts()
                         .filter(|r| r.name == task.name)
-                        .any(|receipt| {
-                            receipt.binaries.iter().any(|bin| {
-                                !bin.source.exists()
-                                    || !bin.target.exists()
-                                    || bin
-                                        .target
-                                        .symlink_metadata()
-                                        .map(|meta| !meta.file_type().is_symlink())
-                                        .unwrap_or(true)
-                            }) || receipt.extras.iter().any(|extra| {
-                                !extra.source.exists()
-                                    || !extra.target.exists()
-                                    || extra
-                                        .target
-                                        .symlink_metadata()
-                                        .map(|meta| !meta.file_type().is_symlink())
-                                        .unwrap_or(true)
-                            }) || receipt.asset.as_ref().is_some_and(|asset| {
-                                !asset.archive_path.exists() || !asset.extract_dir.exists()
-                            })
-                        });
+                        .any(receipt_missing_artifacts);
 
                     if all_match && !missing_paths {
                         ui::info(format!(
@@ -1345,6 +1325,35 @@ impl Workspace {
     }
 }
 
+fn receipt_missing_artifacts(receipt: &ToolReceipt) -> bool {
+    let binaries_missing = receipt.binaries.iter().any(|bin| {
+        !bin.source.exists()
+            || !bin.target.exists()
+            || bin
+                .target
+                .symlink_metadata()
+                .map(|meta| !meta.file_type().is_symlink())
+                .unwrap_or(true)
+    });
+
+    let extras_missing = receipt.extras.iter().any(|extra| {
+        !extra.source.exists()
+            || !extra.target.exists()
+            || extra
+                .target
+                .symlink_metadata()
+                .map(|meta| !meta.file_type().is_symlink())
+                .unwrap_or(true)
+    });
+
+    let asset_missing = receipt
+        .asset
+        .as_ref()
+        .is_some_and(|asset| !asset.archive_path.exists() || !asset.extract_dir.exists());
+
+    binaries_missing || extras_missing || asset_missing
+}
+
 fn ensure_clean_worktree(repo: &Repository) -> Result<()> {
     if repo.state() != git2::RepositoryState::Clean {
         anyhow::bail!("Repository has an in-progress operation (merge, rebase, etc.). Finish it first or re-run with --force.");
@@ -1457,7 +1466,7 @@ mod tests {
     use super::*;
     use crate::config::default_profile_name;
 
-    use crate::lockfile::BinaryLink;
+    use crate::lockfile::{AssetRecord, BinaryLink, ExtraLink, ToolReceipt};
     use crate::toolset::InstallerKind;
     use rstest::rstest;
     use serial_test::serial;
@@ -2123,5 +2132,51 @@ version = "14.0.0"
         );
 
         drop(temp);
+    }
+
+    #[test]
+    fn receipt_missing_artifacts_detects_missing_asset() {
+        let temp = TempDir::new().unwrap();
+        let receipt = ToolReceipt {
+            name: "mock".to_string(),
+            manifest_version: "latest".to_string(),
+            resolved_version: "v1.0.0".to_string(),
+            installer_kind: "github".to_string(),
+            installed_at: "2025-01-01T00:00:00Z".to_string(),
+            binaries: Vec::new(),
+            extras: Vec::new(),
+            asset: Some(AssetRecord {
+                name: "mock.tar.gz".to_string(),
+                url: "https://example.com/mock.tar.gz".to_string(),
+                checksum: "deadbeef".to_string(),
+                archive_path: temp.path().join("missing.tar.gz"),
+                extract_dir: temp.path().join("missing"),
+                pattern_index: Some(0),
+                pattern: Some("mock".to_string()),
+            }),
+        };
+
+        assert!(receipt_missing_artifacts(&receipt));
+    }
+
+    #[test]
+    fn receipt_missing_artifacts_detects_missing_extra() {
+        let temp = TempDir::new().unwrap();
+        let receipt = ToolReceipt {
+            name: "mock".to_string(),
+            manifest_version: "latest".to_string(),
+            resolved_version: "v1.0.0".to_string(),
+            installer_kind: "github".to_string(),
+            installed_at: "2025-01-01T00:00:00Z".to_string(),
+            binaries: Vec::new(),
+            extras: vec![ExtraLink {
+                kind: "completion".to_string(),
+                source: temp.path().join("cache/tools/mock/v1.0.0/completion/_mock"),
+                target: temp.path().join("state/share/zsh/site-functions/_mock"),
+            }],
+            asset: None,
+        };
+
+        assert!(receipt_missing_artifacts(&receipt));
     }
 }
