@@ -2,7 +2,7 @@
 
 - [x] Phase 0: Remove `ubi`; scaffold installer core layout; bump lockfile schema to v2 (tool_receipts)
 - [x] Phase 1: New manifest parser (tables for bin/extras, asset_filter regex list, checksum) + `dws check` structural validation
-- [ ] Phase 2: GitHub backend (release metadata fetch, asset selection scoring, download, extract, receipt write)
+- [x] Phase 2: GitHub backend (release metadata fetch, asset selection scoring, download, extract, receipt write)
 - [ ] Phase 3: Checksum discovery & verification (asset + script) + receipt status updates
 - [ ] Phase 4: Script installer backend (download, checksum verify, execute, explicit binaries)
 - [ ] Phase 5: Interactive `dws add` (regex refinement loop, binary/extras detection, immediate install, anchored regex for pinned)
@@ -22,14 +22,8 @@
   - Bind mount repo + compiled `dws` binary into container
   - Start interactive shell with isolated XDG directories; document usage so it can replace the host sandbox
 
-- [ ] Container-based sandbox workflow
-  - Build Linux target binary (`cargo build --target x86_64-unknown-linux-gnu` etc.)
-  - Launch default image (e.g. `quay.io/fedora/fedora-toolbox:latest`) via podman/docker
-  - Bind mount repo + compiled `dws` binary into container
-  - Start interactive shell with isolated XDG directories; document usage so it can replace the host sandbox
-
-- [ ] Create `DEPENDENCIES.md`
-  - Document rationale for each direct dependency
+- [x] Create `DEPENDENCIES.md`
+  - Document rationale for each direct dependency (reviewed 2025-10-16)
   - Note replacement of `atty` with `is-terminal` (commits 26a371b, 28fc610 for lockfile refresh)
   - Define quarterly audit cadence (cargo audit/outdated/deny)
   - Highlight potential future migrations (e.g. chrono -> time, directories -> alternative)
