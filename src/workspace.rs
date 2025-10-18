@@ -979,15 +979,26 @@ impl Workspace {
                     let missing_paths = lockfile
                         .tool_receipts()
                         .filter(|r| r.name == task.name)
-                        .flat_map(|r| r.binaries.iter())
-                        .any(|bin| {
-                            !bin.source.exists()
-                                || !bin.target.exists()
-                                || bin
-                                    .target
-                                    .symlink_metadata()
-                                    .map(|meta| !meta.file_type().is_symlink())
-                                    .unwrap_or(true)
+                        .any(|receipt| {
+                            receipt.binaries.iter().any(|bin| {
+                                !bin.source.exists()
+                                    || !bin.target.exists()
+                                    || bin
+                                        .target
+                                        .symlink_metadata()
+                                        .map(|meta| !meta.file_type().is_symlink())
+                                        .unwrap_or(true)
+                            }) || receipt.extras.iter().any(|extra| {
+                                !extra.source.exists()
+                                    || !extra.target.exists()
+                                    || extra
+                                        .target
+                                        .symlink_metadata()
+                                        .map(|meta| !meta.file_type().is_symlink())
+                                        .unwrap_or(true)
+                            }) || receipt.asset.as_ref().is_some_and(|asset| {
+                                !asset.archive_path.exists() || !asset.extract_dir.exists()
+                            })
                         });
 
                     if all_match && !missing_paths {
